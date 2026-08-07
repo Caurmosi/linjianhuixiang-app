@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 全屏无 ActionBar 主题：状态栏森林绿，导航栏纸白 -->
+    <style name="Theme.LinjianHuixiang" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/forest_600</item>
+        <item name="colorPrimaryVariant">@color/forest_700</item>
+        <item name="colorSecondary">@color/sun</item>
+        <item name="android:statusBarColor">@color/forest_900</item>
+        <item name="android:navigationBarColor">@color/paper</item>
+        <item name="android:windowBackground">@color/paper</item>
+    </style>
+</resources>
