@@ -1,10 +1,11 @@
 /**
  * App.jsx
- * 应用外壳：手机画布 + 状态栏 + 屏幕路由 + 底部导航 + Toast
+ * 应用外壳：手机画布 + 屏幕路由 + 底部导航 + Toast
+ * 说明：真机上由系统绘制真实顶部系统栏，H5 不再渲染模拟状态栏；
+ * components/ 目录下的状态栏组件文件保留作参考但不挂载。
  */
 import { useEffect } from 'react';
 import { AppProvider, useApp } from './store/appStore.jsx';
-import StatusBar from './components/StatusBar';
 import BottomNav from './components/BottomNav';
 import HomeScreen from './screens/HomeScreen';
 import AnalyzingScreen from './screens/AnalyzingScreen';
@@ -65,7 +66,6 @@ export default function App() {
       <div className="app-bg min-h-screen w-full flex items-center justify-center py-4 sm:px-4">
         <div className="phone-frame">
           <div className="screen">
-            <StatusBar />
             <div className="content">
               <ActiveScreen />
             </div>

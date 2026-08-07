@@ -1,7 +1,9 @@
 /**
  * exportReport.js
  * 报告导出：用纯 canvas 手绘摘要卡（零新增依赖），
- * 导出为 PNG 并通过 a[download] 触发下载。
+ * 导出为 PNG。
+ * - 真机（window.AndroidBridge.saveImage 存在）：写入系统相册（MediaStore）
+ * - 浏览器 / 无桥：降级为 a[download] 下载
  * 文件名：linjianhuixiang-report.png
  */
 import { gradeOf } from '../data/repository';
@@ -40,9 +42,9 @@ function bar(ctx, x, y, w, label, value, color) {
 /**
  * 导出宜居度摘要报告
  * @param {object} analysis buildAnalysis 输出
- * @returns {boolean} 是否成功触发下载
+ * @returns {Promise<boolean>} 是否成功保存/触发下载
  */
-export function exportReport(analysis) {
+export async function exportReport(analysis) {
   if (typeof document === 'undefined') return false;
   const canvas = document.createElement('canvas');
   canvas.width = 720;
@@ -161,6 +163,18 @@ export function exportReport(analysis) {
   ctx.fillText('《林间回响》 v1.0.0 · 生成于 ' + ds, 48, 920);
 
   const url = canvas.toDataURL('image/png');
+
+  // 真机：优先走原生桥写入系统相册（MediaStore），成功后图片出现在手机相册
+  const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
+  if (bridge && typeof bridge.saveImage === 'function') {
+    try {
+      return bridge.saveImage(url, 'linjianhuixiang-report.png') === true;
+    } catch (err) {
+      // 桥调用异常 → 降级为 a[download] 方案
+    }
+  }
+
+  // 浏览器 / 无桥环境：a[download] 触发下载
   const link = document.createElement('a');
   link.href = url;
   link.download = 'linjianhuixiang-report.png';

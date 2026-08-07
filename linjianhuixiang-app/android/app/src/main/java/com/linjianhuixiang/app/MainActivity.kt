@@ -1,9 +1,13 @@
 package com.linjianhuixiang.app
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebChromeClient.FileChooserParams
@@ -12,6 +16,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -42,6 +47,52 @@ class MainActivity : AppCompatActivity() {
             filePathCallback?.onReceiveValue(uri?.let { arrayOf(it) })
             filePathCallback = null
         }
+
+    // 录音权限：H5 通过 AndroidBridge.requestRecordPermission() 触发（同步返回当前状态）
+    private var recordPermissionRequestPending = false
+    private val recordPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            recordPermissionRequestPending = false
+            Toast.makeText(this, if (granted) "已获得录音权限" else "未获得录音权限", Toast.LENGTH_SHORT).show()
+        }
+
+    // 写外部存储权限：仅 API ≤ 28 导出 PNG 到公共相册目录时需要
+    private var writePermissionRequestPending = false
+    private val writeStorageLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            writePermissionRequestPending = false
+            if (granted) Toast.makeText(this, "已获得存储权限", Toast.LENGTH_SHORT).show()
+            else Toast.makeText(this, "未获得存储权限，无法保存到相册", Toast.LENGTH_SHORT).show()
+        }
+
+    /** 供 JS 桥调用：同步返回当前是否有录音权限；无则发起系统权限请求 */
+    private fun ensureRecordPermission(): Boolean {
+        return if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            recordPermissionRequestPending = false
+            true
+        } else {
+            if (!recordPermissionRequestPending) {
+                recordPermissionRequestPending = true
+                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+            false
+        }
+    }
+
+    /** 供 JS 桥调用：API 29+ 走 MediaStore 无需权限；API ≤ 28 需 WRITE_EXTERNAL_STORAGE */
+    private fun ensureWritePermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return true
+        return if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+            writePermissionRequestPending = false
+            true
+        } else {
+            if (!writePermissionRequestPending) {
+                writePermissionRequestPending = true
+                writeStorageLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+            false
+        }
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,10 +143,24 @@ class MainActivity : AppCompatActivity() {
                 openAudioFile.launch("audio/*") // 只选音频
                 return true
             }
+
+            // 关键：WebView 的 getUserMedia 需要显式授权，
+            // 否则录音权限会被静默拒绝，MediaRecorder 无法获取音频流。
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                if (request != null && request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                    request.grant(request.resources)
+                } else {
+                    request?.deny()
+                }
+            }
         }
 
-        // JS 桥：H5 通过 window.AndroidBridge 调用原生能力
-        webView.addJavascriptInterface(WebAppInterface(this), "AndroidBridge")
+        // JS 桥：H5 通过 window.AndroidBridge 调用原生能力；
+        // 权限相关由本 Activity 提供实现（同步返回当前授权状态）。
+        webView.addJavascriptInterface(
+            WebAppInterface(this, ::ensureRecordPermission, ::ensureWritePermission),
+            "AndroidBridge"
+        )
 
         // 加载打包进 assets 的 H5 入口
         webView.loadUrl("file:///android_asset/index.html")

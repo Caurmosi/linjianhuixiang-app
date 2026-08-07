@@ -14,9 +14,9 @@ export default function SettingsScreen() {
 
   const setThreshold = (v) => dispatch({ type: 'SET_THRESHOLD', value: v });
 
-  const onExport = () => {
-    const ok = exportReport(state.analysis);
-    dispatch({ type: 'TOAST', message: ok ? '报告图片已导出（PDF 为后续版本）' : '导出失败，请重试' });
+  const onExport = async () => {
+    const ok = await exportReport(state.analysis);
+    dispatch({ type: 'TOAST', message: ok ? '报告已保存到手机相册（PDF 为后续版本）' : '保存失败，请重试' });
   };
 
   return (

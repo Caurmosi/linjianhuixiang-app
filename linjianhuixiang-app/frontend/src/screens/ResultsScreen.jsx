@@ -17,9 +17,9 @@ export default function ResultsScreen() {
   const desc = livabilityDesc(a);
 
   const go = (screen) => dispatch({ type: 'GO', screen });
-  const share = () => {
-    const ok = exportReport(state.analysis);
-    dispatch({ type: 'TOAST', message: ok ? '报告图片已导出' : '导出失败，请重试' });
+  const share = async () => {
+    const ok = await exportReport(state.analysis);
+    dispatch({ type: 'TOAST', message: ok ? '报告已保存到手机相册' : '保存失败，请重试' });
   };
 
   const QUICK = [

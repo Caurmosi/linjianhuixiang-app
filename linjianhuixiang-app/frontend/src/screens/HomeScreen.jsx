@@ -22,12 +22,37 @@ export default function HomeScreen() {
 
   const onFileChange = (e) => {
     const file = e.target.files && e.target.files[0];
-    if (file) dispatch({ type: 'START_ANALYSIS', recording: file.name });
+    if (!file) return;
+    const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
+    const imported = (name) => dispatch({ type: 'START_ANALYSIS', recording: name });
+    // 真机：读取 base64 并交给原生桥保存到 App 本地目录
+    if (bridge && typeof bridge.importAudio === 'function') {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          bridge.importAudio(String(reader.result), file.name);
+          dispatch({ type: 'TOAST', message: '音频已导入并保存到本地' });
+        } catch (err) {
+          // 桥调用异常 → 降级为仅文件名，继续分析
+          dispatch({ type: 'TOAST', message: '已导入：' + file.name });
+        }
+        imported(file.name);
+      };
+      reader.onerror = () => {
+        dispatch({ type: 'TOAST', message: '已导入：' + file.name });
+        imported(file.name);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // 浏览器 / 无桥环境：仅提示并走现有分析流程
+      dispatch({ type: 'TOAST', message: '已导入：' + file.name });
+      imported(file.name);
+    }
     e.target.value = '';
   };
 
   const onRecord = async () => {
-    // 实时录音（mock 闭环）：真录音 3 秒，分析仍为 mock
+    // 实时录音：真机走 MediaRecorder 真实采集 + 原生桥保存；分析仍为 mock
     const fallback = () => {
       dispatch({
         type: 'START_ANALYSIS',
@@ -35,6 +60,31 @@ export default function HomeScreen() {
         overrides: { speciesCount: 7, livability: { score: 62, noise: 41, bio: 70, sound: 55 } },
       });
     };
+    // 完成分析（mock overrides 保持现有 62 分那套）
+    const startAnalysis = (name) => {
+      dispatch({
+        type: 'START_ANALYSIS',
+        recording: name,
+        overrides: { speciesCount: 7, livability: { score: 62, noise: 41, bio: 70, sound: 55 } },
+      });
+    };
+    const ts = () => String(Date.now());
+    const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
+
+    // 1) 真机：先申请录音权限；失败则 Toast 并回退演示分析
+    if (bridge && typeof bridge.requestRecordPermission === 'function') {
+      let granted = false;
+      try {
+        granted = bridge.requestRecordPermission() === true;
+      } catch (err) {
+        granted = false;
+      }
+      if (!granted) {
+        dispatch({ type: 'TOAST', message: '未获得录音权限，已回退到演示分析' });
+        fallback();
+        return;
+      }
+    }
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
@@ -43,16 +93,43 @@ export default function HomeScreen() {
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = () => {}; // mock：不处理真实音频数据
+      const options =
+        typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported('audio/webm')
+          ? { mimeType: 'audio/webm' }
+          : {};
+      const recorder = new MediaRecorder(stream, options);
+      const chunks = [];
+      // 2) 收集真实音频数据
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
-        dispatch({ type: 'TOAST', message: '录音完成，开始分析' });
-        dispatch({
-          type: 'START_ANALYSIS',
-          recording: '实时录音_3s.wav',
-          overrides: { speciesCount: 7, livability: { score: 62, noise: 41, bio: 70, sound: 55 } },
-        });
+        const mimeType = recorder.mimeType || 'audio/webm';
+        const blob = chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null;
+        if (blob && bridge && typeof bridge.saveAudio === 'function') {
+          // 3) 转 base64 → 原生桥保存到本地
+          const reader = new FileReader();
+          const finish = (saved) => {
+            dispatch({ type: 'TOAST', message: saved ? '录音已保存到手机' : '录音完成，开始分析' });
+            startAnalysis('实时录音_' + ts() + '.webm');
+          };
+          reader.onload = () => {
+            let saved = false;
+            try {
+              saved = bridge.saveAudio(String(reader.result), 'linjianhuixiang_录音_' + ts() + '.webm') === true;
+            } catch (err) {
+              saved = false;
+            }
+            finish(saved);
+          };
+          reader.onerror = () => finish(false);
+          reader.readAsDataURL(blob);
+        } else {
+          // 5) 无桥 / 无数据：降级为现有 mock 分析流程
+          dispatch({ type: 'TOAST', message: '录音完成，开始分析' });
+          startAnalysis('实时录音_3s.wav');
+        }
       };
       recorder.start();
       window.setTimeout(() => {
