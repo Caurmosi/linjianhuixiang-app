@@ -9,14 +9,15 @@ import AppBar from '../components/AppBar';
 import HeatmapChart from '../components/charts/HeatmapChart';
 import MapChart from '../components/charts/MapChart';
 import Chip from '../components/ui/Chip';
-import { GREEN_SPACES } from '../data/mockData';
+import { getGreenSpaces } from '../data/repository';
 
 export default function MapScreen() {
   const { state, dispatch } = useApp();
   const [seg, setSeg] = useState('heat');
   const [greenIndex, setGreenIndex] = useState(0);
   const a = state.analysis;
-  const green = GREEN_SPACES[greenIndex] || GREEN_SPACES[0];
+  const greenSpaces = getGreenSpaces();
+  const green = greenSpaces[greenIndex] || greenSpaces[0];
 
   return (
     <div>
@@ -48,7 +49,7 @@ export default function MapScreen() {
           <h4>样点空间分布</h4>
           {/* 多绿地切换器 */}
           <div className="seg green-switch" style={{ marginBottom: 10 }}>
-            {GREEN_SPACES.map((g, i) => (
+            {greenSpaces.map((g, i) => (
               <button key={g.id} className={i === greenIndex ? 'on' : ''} onClick={() => setGreenIndex(i)}>
                 {g.name}
               </button>

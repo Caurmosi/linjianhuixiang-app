@@ -30,12 +30,16 @@ function collectSrcText(dir) {
 }
 const srcText = collectSrcText(srcDir);
 
-/** mockData.js 导出的符号集合 */
-const mockDataPath = fileURLToPath(new URL('../src/data/mockData.js', import.meta.url));
-const mockSrc = readFileSync(mockDataPath, 'utf8');
+/** repository.js 导出的符号集合（数据契约：UI 只允许从 repository 导入数据） */
+const repositoryPath = fileURLToPath(new URL('../src/data/repository.js', import.meta.url));
+const repositorySrc = readFileSync(repositoryPath, 'utf8');
 const exportedNames = new Set([
-  ...mockSrc.matchAll(/export\s+(?:const|function|let|var)\s+([A-Za-z_$][\w$]*)/g),
-].map((m) => m[1]));
+  ...[...repositorySrc.matchAll(/export\s+(?:const|function|let|var)\s+([A-Za-z_$][\w$]*)/g)].map((m) => m[1]),
+  ...[...repositorySrc.matchAll(/export\s*\{([^}]+)\}/g)]
+    .flatMap((m) => m[1].split(','))
+    .map((s) => s.trim().split(/\s+as\s+/)[0])
+    .filter(Boolean),
+]);
 
 describe('数据契约：analysis 顶层字段', () => {
   test('src 中直接引用的 analysis.* 字段均存在于 buildAnalysis 输出', () => {
@@ -93,9 +97,9 @@ describe('数据契约：指数/地图/历史字段', () => {
   });
 });
 
-describe('数据契约：mockData 具名导入均真实存在', () => {
-  test('各屏幕 from mockData 的具名导入都在 mockData.js 中导出', () => {
-    const importRe = /import\s*\{([^}]+)\}\s*from\s*['"]\.\.?\/data\/mockData['"]/g;
+describe('数据契约：repository 具名导入均真实存在', () => {
+  test('各屏幕 from repository 的具名导入都在 repository.js 中导出', () => {
+    const importRe = /import\s*\{([^}]+)\}\s*from\s*['"]\.\.?\/data\/repository['"]/g;
     let m;
     let found = false;
     while ((m = importRe.exec(srcText)) !== null) {
@@ -103,10 +107,15 @@ describe('数据契约：mockData 具名导入均真实存在', () => {
       for (const raw of m[1].split(',')) {
         const name = raw.trim().split(/\s+as\s+/)[0];
         if (!name) continue;
-        assert.ok(exportedNames.has(name), `屏幕导入了 mockData 中不存在的符号: ${name}`);
+        assert.ok(exportedNames.has(name), `屏幕导入了 repository 中不存在的符号: ${name}`);
       }
     }
-    assert.ok(found, '应扫描到对 mockData 的具名导入');
+    assert.ok(found, '应扫描到对 repository 的具名导入');
+  });
+
+  test('src 下不再存在对 mockData 的直接 import（数据出口唯一化）', () => {
+    const mockImportRe = /from\s*['"]\.\.?\/data\/mockData['"]/g;
+    assert.equal(srcText.match(mockImportRe), null, 'UI/store/utils 不得直接 import ../data/mockData');
   });
 });
 

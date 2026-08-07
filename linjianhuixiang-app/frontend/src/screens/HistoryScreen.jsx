@@ -4,7 +4,7 @@
  */
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
-import { analysisForHistory } from '../data/mockData';
+import { analysisForHistory } from '../data/repository';
 import { IconBird, IconClock, IconChevronRight } from '../components/icons';
 
 export default function HistoryScreen() {

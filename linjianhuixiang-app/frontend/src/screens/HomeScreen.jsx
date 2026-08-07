@@ -4,7 +4,7 @@
  */
 import { useRef } from 'react';
 import { useApp } from '../store/appStore.jsx';
-import { analysisForHistory } from '../data/mockData';
+import { analysisForHistory } from '../data/repository';
 import Button from '../components/ui/Button';
 import { IconLeaf, IconUpload, IconPlay, IconMic, IconClock, IconBird, IconChevronRight, IconInfo } from '../components/icons';
 

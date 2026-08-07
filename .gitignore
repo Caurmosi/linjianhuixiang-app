@@ -27,3 +27,6 @@ Thumbs.db
 # Logs / temp
 *.log
 .tmp
+
+# WorkBuddy 内部文件
+.workbuddy/

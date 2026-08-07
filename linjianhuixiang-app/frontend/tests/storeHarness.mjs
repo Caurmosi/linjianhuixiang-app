@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import * as mockData from '../src/data/mockData.js';
+import * as repository from '../src/data/repository.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const storePath = path.join(__dirname, '..', 'src', 'store', 'appStore.jsx');
@@ -50,8 +50,8 @@ const initialStateSrc = extractBalanced('const initialState = ');
 const reducerSrc = extractBalanced('function reducer(state, action) ');
 
 const sandbox = {
-  buildAnalysis: mockData.buildAnalysis,
-  HISTORY: mockData.HISTORY,
+  buildAnalysis: repository.buildAnalysis,
+  getHistory: repository.getHistory,
 };
 vm.createContext(sandbox);
 vm.runInContext(

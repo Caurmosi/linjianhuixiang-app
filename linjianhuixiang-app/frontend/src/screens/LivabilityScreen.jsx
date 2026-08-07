@@ -7,7 +7,7 @@ import AppBar from '../components/AppBar';
 import Ring from '../components/Ring';
 import Bar from '../components/ui/Bar';
 import ScatterChart from '../components/charts/ScatterChart';
-import { gradeOf } from '../data/mockData';
+import { gradeOf } from '../data/repository';
 import { IconStar } from '../components/icons';
 
 export default function LivabilityScreen() {

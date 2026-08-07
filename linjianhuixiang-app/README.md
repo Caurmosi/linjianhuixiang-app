@@ -43,7 +43,10 @@ linjianhuixiang-app/
 │       ├── main.jsx
 │       ├── App.jsx                # 屏幕路由 + 底部导航 + Toast
 │       ├── index.css              # Tailwind + 全部组件样式
+│       ├── config/dataConfig.js   # 真假数据源开关（mock / api，VITE_USE_MOCK 切换）
 │       ├── data/mockData.js       # 演示数据（物种/指数/宜居度/热力图/地图/历史）
+│       ├── data/repository.js     # 统一数据访问层（全应用唯一数据出口）
+│       ├── services/apiService.js # 真实 API 骨架（BirdNET/后端接入口，待实现）
 │       ├── store/appStore.js      # Context 全局状态（结果共享 / 阈值 / 开关）
 │       ├── components/
 │       │   ├── StatusBar.jsx  BottomNav.jsx  AppBar.jsx  Ring.jsx  icons.jsx
@@ -79,6 +82,42 @@ npm run preview      # 预览构建产物
 ```
 
 桌面浏览器打开时显示为**居中手机画布**（最大宽度 430px）；真机窄屏（≤480px）自动全屏沉浸。
+
+---
+
+## 数据源切换（mock ↔ 真实 API）
+
+前端通过**统一数据访问层** `src/data/repository.js` 获取数据，UI / store / utils 不直接依赖 mockData，
+因此切换数据源时**界面代码零改动**。
+
+- **默认（mock 演示数据）**：不设置环境变量，或 `VITE_USE_MOCK=true`。
+
+  ```bash
+  npm run dev
+  ```
+
+- **切换到真实 API 模式**：
+
+  ```bash
+  VITE_USE_MOCK=false npm run dev
+  ```
+
+  此时 `repository.js` 会改用 `src/services/apiService.js`。由于 BirdNET / 后端接口尚未接入，
+  应用会抛出「真实 API 未接入」错误 —— 这是**预期行为**，用于提示开发者完成接入。
+
+**如何接入 BirdNET / 后端**：
+
+1. 在 `src/services/apiService.js` 中按 repository 同款接口逐个实现：
+   `getSpeciesList / getIndices / getLivability / getHeatmap / getMapPoints /
+   getGreenSpaces / getSuggestions / getHistory / buildAnalysis / analysisForHistory /
+   gradeOf / livabilityDesc`，将 `throw` 占位替换为 fetch/axios 请求；
+2. 返回数据结构必须与 `src/data/mockData.js` 保持一致（字段契约由 `tests/dataContract.test.js` 守护）；
+3. 真实接口为异步时改为 `async` 函数（返回 Promise），并在 UI 消费侧按需 `await`
+   （当前 UI 为同步消费，真实接入阶段再统一改造）；
+4. 切回 mock：`VITE_USE_MOCK=true npm run dev`，或直接删除环境变量。
+
+> 调试辅助：`repository.getDataSource()` / `isMockMode()` / `isMock()` 返回当前数据源类型，
+> 供开发调试与测试断言使用。
 
 ---
 

@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
-import { buildAnalysis } from '../data/mockData';
+import { buildAnalysis } from '../data/repository';
 import { IconCheck, IconSpark } from '../components/icons';
 
 const STAGES = [

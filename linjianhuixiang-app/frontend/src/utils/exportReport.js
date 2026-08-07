@@ -4,7 +4,7 @@
  * 导出为 PNG 并通过 a[download] 触发下载。
  * 文件名：linjianhuixiang-report.png
  */
-import { gradeOf } from '../data/mockData';
+import { gradeOf } from '../data/repository';
 
 /** 圆角矩形路径（仅绘制，不填充/描边） */
 function roundRect(ctx, x, y, w, h, r) {

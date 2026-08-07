@@ -11,7 +11,10 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildAnalysis, analysisForHistory, HISTORY, SPECIES } from '../src/data/mockData.js';
+import { buildAnalysis, analysisForHistory, getHistory, getSpeciesList } from '../src/data/repository.js';
+
+const SPECIES = getSpeciesList();
+const HISTORY = getHistory();
 
 const storePath = fileURLToPath(new URL('../src/store/appStore.jsx', import.meta.url));
 const src = readFileSync(storePath, 'utf8');
@@ -39,9 +42,9 @@ const reducer = new Function(`return (${src.slice(reducerBlock.start, reducerBlo
 const initBlock = findBlock(/const initialState = \{/);
 const initialState = new Function(
   'buildAnalysis',
-  'HISTORY',
+  'getHistory',
   `return (${src.slice(initBlock.open, initBlock.end)})`
-)(buildAnalysis, HISTORY);
+)(buildAnalysis, getHistory);
 
 /** 与 SpeciesScreen.jsx 一致的阈值过滤公式：s.conf >= threshold */
 const speciesShown = (threshold) => SPECIES.filter((s) => s.conf >= threshold);

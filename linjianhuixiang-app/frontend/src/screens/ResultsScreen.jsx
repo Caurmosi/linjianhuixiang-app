@@ -5,7 +5,7 @@
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Ring from '../components/Ring';
-import { gradeOf, livabilityDesc } from '../data/mockData';
+import { gradeOf, livabilityDesc } from '../data/repository';
 import { exportReport } from '../utils/exportReport';
 import { IconShare, IconDoc, IconChart, IconHeat, IconGlobe } from '../components/icons';
 

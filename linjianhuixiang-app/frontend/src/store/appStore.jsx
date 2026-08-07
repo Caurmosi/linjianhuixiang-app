@@ -4,7 +4,7 @@
  * 使用 React Context + useReducer，无需额外依赖。
  */
 import { createContext, useContext, useReducer } from 'react';
-import { buildAnalysis, HISTORY } from '../data/mockData';
+import { buildAnalysis, getHistory } from '../data/repository';
 
 const AppContext = createContext(null);
 
@@ -15,7 +15,7 @@ const initialState = {
   recording: '中山公园_晨.wav',
   analysis: buildAnalysis('中山公园_晨.wav', { speciesCount: 9, livability: { score: 68, noise: 34, bio: 76, sound: 60 } }),
   analysisOverrides: null, // START_ANALYSIS 携带的 mock 分析覆盖项（样例 / 实时录音使用）
-  history: HISTORY,
+  history: getHistory(),
   threshold: 0.5, // 置信度阈值（0.30 - 0.90）
   highpass: true, // 高通滤波降噪
   realtime: false, // 实时录音分析
