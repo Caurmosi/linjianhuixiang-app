@@ -1,0 +1,48 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build frontend (H5)
+        working-directory: linjianhuixiang-app/frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Sync dist → Android assets
+        run: |
+          rm -rf linjianhuixiang-app/android/app/src/main/assets/*
+          cp -r linjianhuixiang-app/frontend/dist/* linjianhuixiang-app/android/app/src/main/assets/
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build debug APK
+        working-directory: linjianhuixiang-app/android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linjianhuixiang-debug-apk
+          path: linjianhuixiang-app/android/app/build/outputs/apk/debug/*.apk
