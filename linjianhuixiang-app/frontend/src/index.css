@@ -1059,6 +1059,9 @@ input[type='range']::-moz-range-thumb {
   font-size: 13px;
   color: var(--ink);
   outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: var(--ink);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .api-base-input:focus {

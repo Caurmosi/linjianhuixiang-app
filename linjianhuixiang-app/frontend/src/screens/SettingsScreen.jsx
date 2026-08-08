@@ -30,7 +30,9 @@ export default function SettingsScreen() {
       const v = apiBase.trim().replace(/\/$/, '');
       if (v) localStorage.setItem('ljx_api_base', v);
       else localStorage.removeItem('ljx_api_base');
-      dispatch({ type: 'TOAST', message: '后端地址已保存，重启分析生效' });
+      // 保存后回写 state，输入框立即显示规范化后的地址（而非空白）
+      setApiBase(v);
+      dispatch({ type: 'TOAST', message: '后端地址已保存，下次分析自动使用真实识别' });
     } catch (err) {
       dispatch({ type: 'TOAST', message: '保存失败：' + (err && err.message ? err.message : '存储不可用') });
     }
@@ -88,6 +90,8 @@ export default function SettingsScreen() {
               type="text"
               value={apiBase}
               onChange={(e) => setApiBase(e.target.value)}
+              onInput={(e) => setApiBase(e.target.value)}
+              onCompositionEnd={(e) => setApiBase(e.target.value)}
               placeholder="如 http://192.168.1.5:8000"
               autoComplete="off"
               spellCheck={false}

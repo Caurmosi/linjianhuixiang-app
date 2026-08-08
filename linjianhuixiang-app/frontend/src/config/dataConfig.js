@@ -11,10 +11,14 @@
  *  - VITE_USE_MOCK=false → api
  *    示例：VITE_USE_MOCK=false npm run dev
  *
+ * 运行时覆盖（免重打包）：
+ *  - 设置页保存了后端地址（localStorage.ljx_api_base 非空）→ 自动切真实 API，
+ *    isMockMode()/getDataSource() 在调用时动态判断（优先级高于构建期环境变量）。
+ *
  * Node 测试环境兼容：
  *  - Vite 构建/开发时读取 import.meta.env；
  *  - 纯 Node（node --test）下 import.meta.env 不存在，回退读取 process.env，
- *    因此 tests/repository.test.mjs 可直接验证开关逻辑。
+ *    且无 localStorage，自动回退构建期逻辑，因此 tests/repository.test.mjs 可直接验证开关逻辑。
  */
 export const DATA_SOURCE = Object.freeze({
   MOCK: 'mock',
@@ -41,16 +45,41 @@ function readRuntimeEnv() {
   return nodeEnv;
 }
 
-/** 当前数据源类型：'mock' | 'api'（模块加载时确定） */
+/** 当前数据源类型：'mock' | 'api'（模块加载时按构建期环境确定） */
 export const dataSource = resolveDataSource(readRuntimeEnv());
 
-/** 返回当前数据源类型（调试/测试辅助） */
-export function getDataSource() {
-  return dataSource;
+/**
+ * 读取 App 内运行时配置的后端地址（localStorage.ljx_api_base）。
+ * 读取失败（无 localStorage / 隐私模式受限）按「未配置」处理，返回 null。
+ * @returns {string|null}
+ */
+function readConfiguredApiBase() {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const v = localStorage.getItem('ljx_api_base');
+    return v && String(v).trim() ? String(v).trim() : null;
+  } catch (e) {
+    return null;
+  }
 }
 
-/** 当前是否为 mock 数据源 */
+/**
+ * 返回当前数据源类型（动态）：
+ *  - 设置页配置了后端地址（localStorage.ljx_api_base 非空）→ 'api'（真实识别，免重打包）；
+ *  - 否则回退构建期常量 dataSource。
+ */
+export function getDataSource() {
+  return readConfiguredApiBase() ? DATA_SOURCE.API : dataSource;
+}
+
+/**
+ * 当前是否为 mock 数据源（动态）：
+ *  - 配置了后端地址 → false（走真实 API）；
+ *  - 否则回退构建期判断（dataSource === MOCK）。
+ * Node 测试环境无 localStorage，自动回退构建期逻辑。
+ */
 export function isMockMode() {
+  if (readConfiguredApiBase()) return false;
   return dataSource === DATA_SOURCE.MOCK;
 }
 

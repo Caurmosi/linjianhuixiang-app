@@ -18,8 +18,12 @@
 /** 解析后端基地址：localStorage.ljx_api_base（App 内运行时配置）→ VITE_API_BASE（构建期）→ 空串（同源 /api 代理） */
 function resolveApiBase() {
   if (typeof localStorage !== 'undefined') {
-    const saved = localStorage.getItem('ljx_api_base');
-    if (saved) return String(saved).replace(/\/$/, '');
+    try {
+      const saved = localStorage.getItem('ljx_api_base');
+      if (saved) return String(saved).replace(/\/$/, '');
+    } catch (e) {
+      /* 隐私模式/受限环境读取失败按未配置处理 */
+    }
   }
   const viteEnv = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : null;
   if (viteEnv && viteEnv.VITE_API_BASE) return String(viteEnv.VITE_API_BASE).replace(/\/$/, '');
