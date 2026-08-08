@@ -36,9 +36,11 @@ export default function AnalyzingScreen() {
       } else if (!doneRef.current) {
         doneRef.current = true;
         timer = window.setTimeout(() => {
-          const overrides = state.analysisOverrides || {
-            speciesCount: 9,
-            livability: { score: 68, noise: 34, bio: 76, sound: 60 },
+          // audioFile 存在 → apiService 走真实上传识别；无 audioFile（演示/历史/录音）→ 保持原 mock/组合路径
+          const overrides = {
+            ...(state.analysisOverrides || {}),
+            audioFile: state.audioFile,
+            threshold: state.threshold,
           };
           dispatch({
             type: 'COMPLETE_ANALYSIS',
@@ -53,7 +55,7 @@ export default function AnalyzingScreen() {
       cancelAnimationFrame(raf);
       window.clearTimeout(timer);
     };
-  }, [dispatch, state.recording, state.analysisOverrides]);
+  }, [dispatch, state.recording, state.analysisOverrides, state.audioFile, state.threshold]);
 
   const current = Math.min(STAGES.length - 1, Math.floor(progress / STEP));
   const stagePct = Math.round(((progress - current * STEP) / STEP) * 100);

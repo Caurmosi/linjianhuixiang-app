@@ -13,5 +13,12 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // 真实数据模式（VITE_USE_MOCK=false）：把 /api 代理到后端服务
+    proxy: {
+      '/api': {
+        target: process.env.VITE_API_PROXY || 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
   },
 });

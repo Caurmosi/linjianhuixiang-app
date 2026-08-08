@@ -1041,6 +1041,35 @@ input[type='range']::-moz-range-thumb {
   box-shadow: 0 2px 6px rgba(31, 90, 63, 0.5);
 }
 
+/* 设置：后端地址输入行 */
+.api-base-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.api-base-input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+  font-family: var(--f-mono);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.api-base-input:focus {
+  border-color: var(--forest-500);
+  box-shadow: 0 0 0 3px var(--forest-100);
+}
+.api-base-input::placeholder {
+  color: var(--ink-faint);
+  font-family: var(--f-body);
+}
+
 /* ===== 分析中 ===== */
 .analyzing {
   height: 100%;

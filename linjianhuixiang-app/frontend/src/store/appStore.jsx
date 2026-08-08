@@ -15,6 +15,7 @@ const initialState = {
   recording: '中山公园_晨.wav',
   analysis: buildAnalysis('中山公园_晨.wav', { speciesCount: 9, livability: { score: 68, noise: 34, bio: 76, sound: 60 } }),
   analysisOverrides: null, // START_ANALYSIS 携带的 mock 分析覆盖项（样例 / 实时录音使用）
+  audioFile: null, // START_ANALYSIS 携带的待上传音频 File/Blob（首页选文件 → 真实识别用）
   history: getHistory(),
   threshold: 0.5, // 置信度阈值（0.30 - 0.90）
   highpass: true, // 高通滤波降噪
@@ -38,7 +39,7 @@ function reducer(state, action) {
       return { ...state, tab: action.tab, screen: action.screen, screenStack: [] };
 
     case 'START_ANALYSIS':
-      return { ...state, recording: action.recording, analysisOverrides: action.overrides || null, screen: 'analyzing', screenStack: [] };
+      return { ...state, recording: action.recording, audioFile: action.audioFile || null, analysisOverrides: action.overrides || null, screen: 'analyzing', screenStack: [] };
 
     case 'COMPLETE_ANALYSIS':
       return {

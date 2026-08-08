@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# 数据 / 模型 / 样例音频（大文件不入库，用脚本生成或下载）
+data/*.db
+models/*.tflite
+models/*.zip
+models/*.csv
+assets/sample_*.wav
+assets/real_soundscape.wav
+
+# 环境
+.env
+
+# 日志
+*.log

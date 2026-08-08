@@ -110,10 +110,29 @@ test('VITE_USE_MOCK=false: repository 路由到 apiService → 抛「真实 API 
   const lines = out.split('\n');
   assert.equal(lines.length, 3);
   for (const line of lines) {
-    const [fn, msg] = line.split(':');
-    assert.ok(msg.includes('真实 API 未接入'), `${fn} 应提示真实 API 未接入，实际: ${msg}`);
-    assert.ok(msg.includes(fn), `${fn} 报错信息应包含函数名`);
+    assert.ok(line.includes('真实 API 未接入'), `应提示真实 API 未接入，实际: ${line}`);
   }
+  // 直接接口：报错包含自身函数名
+  assert.ok(lines[0].includes('getSpeciesList'), `getSpeciesList 报错应包含函数名，实际: ${lines[0]}`);
+  assert.ok(lines[1].includes('getGreenSpaces'), `getGreenSpaces 报错应包含函数名，实际: ${lines[1]}`);
+  // buildAnalysis 未携带 audioFile 时委托 fetchBaselineParts，报错溯源到首个基线端点
+  assert.ok(lines[2].includes('getSpeciesList'), `buildAnalysis 无音频应委托基线端点，实际: ${lines[2]}`);
+});
+
+test('VITE_USE_MOCK=false: buildAnalysis 携带 audioFile → 走上传路径，报错溯源到 buildAnalysis（真实识别链路）', async () => {
+  const out = await runNode(
+    `import('./src/data/repository.js').then((m) => {
+      try {
+        m.buildAnalysis('x.wav', { audioFile: new Blob(['fake-wav']), threshold: 0.5 });
+        console.log('NO_THROW');
+      } catch (e) {
+        console.log(e.message);
+      }
+    })`,
+    { VITE_USE_MOCK: 'false' }
+  );
+  assert.ok(out.includes('真实 API 未接入'), `上传路径应提示真实 API 未接入，实际: ${out}`);
+  assert.ok(out.includes('buildAnalysis'), `上传路径报错应包含 buildAnalysis，实际: ${out}`);
 });
 
 test('VITE_USE_MOCK=true: 子进程仍为 mock 数据源（开关不误伤）', async () => {

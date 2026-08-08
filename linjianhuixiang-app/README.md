@@ -99,22 +99,31 @@ npm run preview      # 预览构建产物
 - **切换到真实 API 模式**：
 
   ```bash
+  # 方式一：后端同源（推荐，Vite 已配置 /api → http://localhost:8000 代理）
   VITE_USE_MOCK=false npm run dev
+
+  # 方式二：后端不同源（如远程部署），用 VITE_API_BASE 指定
+  VITE_API_BASE=http://your-host:8000 VITE_USE_MOCK=false npm run dev
   ```
 
-  此时 `repository.js` 会改用 `src/services/apiService.js`。由于 BirdNET / 后端接口尚未接入，
-  应用会抛出「真实 API 未接入」错误 —— 这是**预期行为**，用于提示开发者完成接入。
+  此时 `repository.js` 会改用 `src/services/apiService.js` 请求真实后端。
+  后端服务在仓库 `backend/`（FastAPI），启动方式见 `backend/README.md`：
 
-**如何接入 BirdNET / 后端**：
+  ```bash
+  cd backend
+  pip install -r requirements-dev.txt
+  uvicorn app.main:app --host 0.0.0.0 --port 8000
+  ```
 
-1. 在 `src/services/apiService.js` 中按 repository 同款接口逐个实现：
-   `getSpeciesList / getIndices / getLivability / getHeatmap / getMapPoints /
-   getGreenSpaces / getSuggestions / getHistory / buildAnalysis / analysisForHistory /
-   gradeOf / livabilityDesc`，将 `throw` 占位替换为 fetch/axios 请求；
-2. 返回数据结构必须与 `src/data/mockData.js` 保持一致（字段契约由 `tests/dataContract.test.js` 守护）；
-3. 真实接口为异步时改为 `async` 函数（返回 Promise），并在 UI 消费侧按需 `await`
-   （当前 UI 为同步消费，真实接入阶段再统一改造）；
-4. 切回 mock：`VITE_USE_MOCK=true npm run dev`，或直接删除环境变量。
+  若后端未启动，API 模式会抛出明确的「后端服务不可达」错误 —— 这是预期行为。
+
+**当前接入状态**：`apiService.js` 已实现为**同步 XHR**，与 repository 12 个接口一一对应，
+返回字段与 `mockData.js` 完全一致（由 `tests/dataContract.test.js` 守护），
+`VITE_USE_MOCK=false` 可一键切换，UI 零改动。
+
+**如何做真实音频分析**：`buildAnalysis(name, { audioFile })` 传入 `File/Blob` 即上传
+`POST /api/analyze` 走完整管线（BirdNET 识别 → 声学指数 → 噪声占比 → 宜居度）；
+演示/历史流程（只有录音名）自动组合后端数据端点返回真实数据。
 
 > 调试辅助：`repository.getDataSource()` / `isMockMode()` / `isMock()` 返回当前数据源类型，
 > 供开发调试与测试断言使用。

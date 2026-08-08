@@ -1,0 +1,10 @@
+# 《林间回响》后端基础依赖 —— 保证 Windows / macOS / Linux 均可安装
+# 注意：不含 tflite-runtime（该包只有 Linux wheel，Windows 安装会失败）。
+# 需要真实 BirdNET 推理时（推荐在 Docker / Linux 生产环境），再叠加安装 requirements-birdnet.txt
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+python-multipart>=0.0.9
+numpy>=1.26,<3.0
+scipy>=1.11,<2.0
+soundfile>=0.12,<1.0
+requests>=2.31,<3.0

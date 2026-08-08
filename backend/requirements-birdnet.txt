@@ -1,0 +1,5 @@
+# 真实 BirdNET（TFLite）推理依赖 —— 可选（Windows / macOS / Linux 均可安装）
+# ai-edge-litert 是 Google 官方维护的 LiteRT 运行时（tflite-runtime 的继任者），
+# 安装后配合官方模型（scripts/download_birdnet_model.py）启用 birdnet 引擎；
+# 不安装则自动降级为内置启发式引擎。
+ai-edge-litert>=2.0,<3.0

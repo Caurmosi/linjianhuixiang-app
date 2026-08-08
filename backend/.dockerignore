@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+data/*.db
+models/*.tflite
+models/*.csv
+assets/sample_*.wav
+.env

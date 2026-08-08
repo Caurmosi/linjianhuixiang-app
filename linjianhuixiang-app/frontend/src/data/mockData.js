@@ -106,7 +106,10 @@ export const HISTORY = [
  *  - livability 合并放在 ...overrides 之后，保证默认字段 bio/sound/grade/gradeEn 不被顶层展开覆盖（A1）。
  */
 export function buildAnalysis(name, overrides = {}) {
-  const count = overrides.speciesCount ?? SPECIES.length;
+  // audioFile / threshold 是 buildAnalysis 的控制参数（真实上传链路 apiService 消费），
+  // 不进 mock 合并结果，保证 mock 模式下带音频/阈值与不带时输出完全一致。
+  const { audioFile, threshold, ...rest } = overrides;
+  const count = rest.speciesCount ?? SPECIES.length;
   const merged = {
     recording: name,
     species: count >= SPECIES.length ? SPECIES : SPECIES.slice(0, count),
@@ -115,8 +118,8 @@ export function buildAnalysis(name, overrides = {}) {
     mapPoints: MAP_POINTS,
     suggestions: SUGGESTIONS,
     speciesCount: count,
-    ...overrides,
-    livability: { ...LIVABILITY, ...(overrides.livability || {}) },
+    ...rest,
+    livability: { ...LIVABILITY, ...(rest.livability || {}) },
   };
   return merged;
 }

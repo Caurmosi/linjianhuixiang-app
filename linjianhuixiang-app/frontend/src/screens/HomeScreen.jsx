@@ -24,7 +24,9 @@ export default function HomeScreen() {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
-    const imported = (name) => dispatch({ type: 'START_ANALYSIS', recording: name });
+    // 无论是否走原生桥保存，都把 file 本体传给 START_ANALYSIS，
+    // 供 AnalyzingScreen 在真实 API 模式（VITE_USE_MOCK=false）下上传识别
+    const imported = (name) => dispatch({ type: 'START_ANALYSIS', recording: name, audioFile: file });
     // 真机：读取 base64 并交给原生桥保存到 App 本地目录
     if (bridge && typeof bridge.importAudio === 'function') {
       const reader = new FileReader();

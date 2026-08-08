@@ -1,9 +1,11 @@
 /**
  * SettingsScreen.jsx
- * 设置（「我的」Tab 内容）：置信度阈值滑杆 / 高通滤波开关 / 实时录音开关 / 导出与说明
+ * 设置（「我的」Tab 内容）：置信度阈值滑杆 / 高通滤波开关 / 实时录音开关 / 后端地址 / 导出与说明
  */
+import { useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
+import Button from '../components/ui/Button';
 import Toggle from '../components/ui/Toggle';
 import Chip from '../components/ui/Chip';
 import { exportReport } from '../utils/exportReport';
@@ -13,6 +15,26 @@ export default function SettingsScreen() {
   const { state, dispatch } = useApp();
 
   const setThreshold = (v) => dispatch({ type: 'SET_THRESHOLD', value: v });
+
+  // 后端地址（localStorage.ljx_api_base），默认空 = 同源 /api
+  const [apiBase, setApiBase] = useState(() => {
+    try {
+      return (typeof localStorage !== 'undefined' && localStorage.getItem('ljx_api_base')) || '';
+    } catch (e) {
+      return '';
+    }
+  });
+
+  const onSaveApiBase = () => {
+    try {
+      const v = apiBase.trim().replace(/\/$/, '');
+      if (v) localStorage.setItem('ljx_api_base', v);
+      else localStorage.removeItem('ljx_api_base');
+      dispatch({ type: 'TOAST', message: '后端地址已保存，重启分析生效' });
+    } catch (err) {
+      dispatch({ type: 'TOAST', message: '保存失败：' + (err && err.message ? err.message : '存储不可用') });
+    }
+  };
 
   const onExport = async () => {
     const ok = await exportReport(state.analysis);
@@ -49,6 +71,31 @@ export default function SettingsScreen() {
             value={state.threshold}
             onChange={(e) => setThreshold(parseFloat(e.target.value))}
           />
+        </div>
+        <div className="set-row">
+          <div className="ic">
+            <IconFilter size={18} />
+          </div>
+          <div className="t" style={{ flex: 1 }}>
+            <b>后端地址</b>
+            <span>留空 = 同源 /api，局域网联调填 http://IP:端口</span>
+          </div>
+        </div>
+        <div className="px-4 pb-4 pt-1">
+          <div className="api-base-row">
+            <input
+              className="api-base-input"
+              type="text"
+              value={apiBase}
+              onChange={(e) => setApiBase(e.target.value)}
+              placeholder="如 http://192.168.1.5:8000"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <Button variant="primary" onClick={onSaveApiBase}>
+              保存
+            </Button>
+          </div>
         </div>
       </div>
 
