@@ -21,7 +21,10 @@
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.LinjianHuixiang">
+        <!-- 注：usesCleartextTraffic 开启明文 HTTP（Android 9+ 默认禁止），开发/局域网联调 http://IP:端口 必需；
+             生产上线建议改用 HTTPS 或 networkSecurityConfig 白名单。 -->
 
         <activity
             android:name=".MainActivity"
