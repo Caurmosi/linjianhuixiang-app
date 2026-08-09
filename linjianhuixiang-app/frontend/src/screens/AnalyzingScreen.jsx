@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
-import { buildAnalysis } from '../data/repository';
+import { buildAnalysis, buildMockAnalysis } from '../data/repository';
 import { IconCheck, IconSpark } from '../components/icons';
 
 const STAGES = [
@@ -26,32 +26,52 @@ export default function AnalyzingScreen() {
   useEffect(() => {
     let raf = 0;
     let timer = 0;
+    let cancelled = false;
     const start = performance.now();
+
+    // 立即并行发起真实请求（与动画并行，不阻塞；后端不可达时动画结束即兜底演示结果，绝不无限转圈）
+    const overrides = {
+      ...(state.analysisOverrides || {}),
+      audioFile: state.audioFile,
+      threshold: state.threshold,
+    };
+    const recording = state.recording || '中山公园_晨.wav';
+    // Promise.resolve 归一化「mock 同步返回对象 / api 异步返回 Promise」两种形态
+    const pending = Promise.resolve(buildAnalysis(recording, overrides));
+
+    const finish = async () => {
+      if (cancelled) return;
+      try {
+        const analysis = await pending;
+        if (cancelled) return;
+        dispatch({ type: 'COMPLETE_ANALYSIS', analysis });
+      } catch (err) {
+        // 后端不可达：明确提示 + 用演示数据兜底，绝不无限转圈、不白屏不崩溃
+        if (cancelled) return;
+        const reason = err && err.message ? err.message : '未知错误';
+        const demo = buildMockAnalysis(recording, overrides);
+        dispatch({ type: 'TOAST', message: `后端不可达（${reason}），本次显示演示结果` });
+        dispatch({ type: 'COMPLETE_ANALYSIS', analysis: demo });
+      }
+    };
 
     const tick = (t) => {
       const p = Math.min(100, ((t - start) / DURATION) * 100);
       setProgress(p);
-      if (p < 100) {
+      if (p < 100 && !cancelled) {
         raf = requestAnimationFrame(tick);
-      } else if (!doneRef.current) {
+      } else if (!cancelled && !doneRef.current) {
         doneRef.current = true;
+        // 动画完成：等待真实请求落定（已并行进行，最坏 ~1.2s 内必然 settle），再统一跳转
         timer = window.setTimeout(() => {
-          // audioFile 存在 → apiService 走真实上传识别；无 audioFile（演示/历史/录音）→ 保持原 mock/组合路径
-          const overrides = {
-            ...(state.analysisOverrides || {}),
-            audioFile: state.audioFile,
-            threshold: state.threshold,
-          };
-          dispatch({
-            type: 'COMPLETE_ANALYSIS',
-            analysis: buildAnalysis(state.recording || '中山公园_晨.wav', overrides),
-          });
+          finish();
         }, 500);
       }
     };
 
     raf = requestAnimationFrame(tick);
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf);
       window.clearTimeout(timer);
     };

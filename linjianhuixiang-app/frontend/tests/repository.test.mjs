@@ -4,7 +4,7 @@
  *  - repository 各接口与 mockData 转发一致（默认 mock 数据源）；
  *  - dataConfig 数据源开关默认 mock、resolveDataSource 逻辑正确；
  *  - VITE_USE_MOCK=false 时切换到 api（子进程端到端验证）：
- *      dataSource === 'api'，且调用 repository 会得到「真实 API 未接入」报错（预期行为）。
+ *      dataSource === 'api'，且调用 repository 会得到「后端不可达」异步报错（预期行为，绝不阻塞）。
  * 运行：node --test tests/repository.test.mjs
  */
 import { test } from 'node:test';
@@ -91,13 +91,13 @@ test('VITE_USE_MOCK=false: 子进程加载 dataConfig → dataSource=api（端�
   assert.equal(out, 'api|api|false');
 });
 
-test('VITE_USE_MOCK=false: repository 路由到 apiService → 抛「真实 API 未接入」错误（预期行为）', async () => {
+test('VITE_USE_MOCK=false: repository 路由到 apiService → 抛「后端不可达」异步错误（预期行为）', async () => {
   const out = await runNode(
-    `import('./src/data/repository.js').then((m) => {
+    `import('./src/data/repository.js').then(async (m) => {
       const results = [];
       for (const fn of ['getSpeciesList', 'getGreenSpaces', 'buildAnalysis']) {
         try {
-          m[fn]('x.wav', {});
+          await m[fn]('x.wav', {});
           results.push(fn + ':NO_THROW');
         } catch (e) {
           results.push(fn + ':' + e.message);
@@ -110,20 +110,23 @@ test('VITE_USE_MOCK=false: repository 路由到 apiService → 抛「真实 API 
   const lines = out.split('\n');
   assert.equal(lines.length, 3);
   for (const line of lines) {
-    assert.ok(line.includes('真实 API 未接入'), `应提示真实 API 未接入，实际: ${line}`);
+    assert.ok(line.includes('后端不可达'), `应提示后端不可达，实际: ${line}`);
   }
   // 直接接口：报错包含自身函数名
   assert.ok(lines[0].includes('getSpeciesList'), `getSpeciesList 报错应包含函数名，实际: ${lines[0]}`);
   assert.ok(lines[1].includes('getGreenSpaces'), `getGreenSpaces 报错应包含函数名，实际: ${lines[1]}`);
-  // buildAnalysis 未携带 audioFile 时委托 fetchBaselineParts，报错溯源到首个基线端点
-  assert.ok(lines[2].includes('getSpeciesList'), `buildAnalysis 无音频应委托基线端点，实际: ${lines[2]}`);
+  // buildAnalysis 无音频时并行拉取基线端点，失败溯源到任一基线端点（6 个之一）
+  assert.ok(
+    ['getSpeciesList', 'getIndices', 'getLivability', 'getHeatmap', 'getMapPoints', 'getSuggestions'].some((n) => lines[2].includes(n)),
+    `buildAnalysis 无音频应溯源到某个基线端点，实际: ${lines[2]}`
+  );
 });
 
 test('VITE_USE_MOCK=false: buildAnalysis 携带 audioFile → 走上传路径，报错溯源到 buildAnalysis（真实识别链路）', async () => {
   const out = await runNode(
-    `import('./src/data/repository.js').then((m) => {
+    `import('./src/data/repository.js').then(async (m) => {
       try {
-        m.buildAnalysis('x.wav', { audioFile: new Blob(['fake-wav']), threshold: 0.5 });
+        await m.buildAnalysis('x.wav', { audioFile: new Blob(['fake-wav']), threshold: 0.5 });
         console.log('NO_THROW');
       } catch (e) {
         console.log(e.message);
@@ -131,7 +134,7 @@ test('VITE_USE_MOCK=false: buildAnalysis 携带 audioFile → 走上传路径，
     })`,
     { VITE_USE_MOCK: 'false' }
   );
-  assert.ok(out.includes('真实 API 未接入'), `上传路径应提示真实 API 未接入，实际: ${out}`);
+  assert.ok(out.includes('后端不可达'), `上传路径应提示后端不可达，实际: ${out}`);
   assert.ok(out.includes('buildAnalysis'), `上传路径报错应包含 buildAnalysis，实际: ${out}`);
 });
 

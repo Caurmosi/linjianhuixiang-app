@@ -10,6 +10,7 @@ import Toggle from '../components/ui/Toggle';
 import Chip from '../components/ui/Chip';
 import { exportReport } from '../utils/exportReport';
 import { getApiBase, getDataSource } from '../config/dataConfig.js';
+import { pingHealth } from '../data/repository';
 import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight } from '../components/icons';
 
 export default function SettingsScreen() {
@@ -23,21 +24,48 @@ export default function SettingsScreen() {
 
   // 后端地址：非受控输入（ref + defaultValue），避免 Android IME 合成事件与 React 受控 value 冲突导致打不出字。
   // 重新进入设置页时组件重挂载，defaultValue 重新从 localStorage 读取 → 回显最新值。
+  // onFocus 全选旧地址：换地址时点击即全选、直接输入即整体替换（杜绝拼接）。
   const apiInputRef = useRef(null);
 
-  const onSaveApiBase = () => {
+  const onSaveApiBase = async () => {
     const input = apiInputRef.current;
     if (!input) return;
+    let v = '';
     try {
-      const v = input.value.trim().replace(/\/$/, '');
+      v = input.value.trim().replace(/\/$/, '');
       if (v) localStorage.setItem('ljx_api_base', v);
       else localStorage.removeItem('ljx_api_base');
       // 直接写回 input.value 回显规范化后的地址（非受控，不经 React 状态，无 IME 冲突）
       input.value = v;
-      dispatch({ type: 'TOAST', message: '后端地址已保存，下次分析自动使用真实识别' });
     } catch (err) {
       dispatch({ type: 'TOAST', message: '保存失败：' + (err && err.message ? err.message : '存储不可用') });
+      return;
     }
+    if (!v) {
+      dispatch({ type: 'TOAST', message: '已清空后端地址，恢复演示模式' });
+      return;
+    }
+    // 保存后立即异步探测连通性（5s 超时，不阻塞 UI）：让用户当场知道地址对不对
+    dispatch({ type: 'TOAST', message: '已保存，正在检测后端连通性…' });
+    try {
+      await pingHealth(v);
+      dispatch({ type: 'TOAST', message: '后端已连通 ✅ 真实识别已就绪' });
+    } catch (err) {
+      const reason = err && err.message ? err.message : '未知错误';
+      dispatch({ type: 'TOAST', message: `地址不可达：检查后端是否启动 / 手机电脑同一 WiFi（${reason}）` });
+    }
+  };
+
+  const onClearApiBase = () => {
+    const input = apiInputRef.current;
+    if (!input) return;
+    input.value = '';
+    try {
+      localStorage.removeItem('ljx_api_base');
+    } catch (err) {
+      /* 存储不可用按已清空处理 */
+    }
+    dispatch({ type: 'TOAST', message: '已清空后端地址，恢复演示模式' });
   };
 
   const onExport = async () => {
@@ -104,9 +132,13 @@ export default function SettingsScreen() {
               placeholder="如 http://192.168.1.5:8000"
               autoComplete="off"
               spellCheck={false}
+              onFocus={(e) => e.target.select()}
             />
             <Button variant="primary" onClick={onSaveApiBase}>
               保存
+            </Button>
+            <Button variant="ghost" onClick={onClearApiBase}>
+              清空
             </Button>
           </div>
         </div>

@@ -3,7 +3,7 @@
  * 声景地图：分段切换「时间热力图 / 空间分布」；
  * 空间分布支持多绿地切换（中山公园 / 滨江绿地 / 西郊森林公园）
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import HeatmapChart from '../components/charts/HeatmapChart';
@@ -15,9 +15,25 @@ export default function MapScreen() {
   const { state, dispatch } = useApp();
   const [seg, setSeg] = useState('heat');
   const [greenIndex, setGreenIndex] = useState(0);
+  const [greenSpaces, setGreenSpaces] = useState([]);
   const a = state.analysis;
-  const greenSpaces = getGreenSpaces();
-  const green = greenSpaces[greenIndex] || greenSpaces[0];
+
+  // 异步加载多绿地数据（mock 同步返回；api 后端不可达降级空数组，守卫渲染防白屏）
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve(getGreenSpaces())
+      .then((g) => {
+        if (alive) setGreenSpaces(Array.isArray(g) ? g : []);
+      })
+      .catch(() => {
+        if (alive) setGreenSpaces([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const green = greenSpaces[greenIndex] || greenSpaces[0] || { name: '暂无数据', points: [] };
 
   return (
     <div>

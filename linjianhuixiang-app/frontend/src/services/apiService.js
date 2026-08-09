@@ -8,11 +8,13 @@
  *    （如 VITE_API_BASE=http://localhost:8000 VITE_USE_MOCK=false npm run dev）。
  *
  * 实现说明（重要）：
- *  - 本模块使用「同步 XHR」实现，以保持 UI 零改动（repository 目前为同步消费，
- *    appStore 在模块初始化时同步调用 buildAnalysis/getHistory）。
- *    这是原型阶段的务实取舍：真实后端接入后，可平滑改为 fetch + async，
- *    消费侧按仓库 README「数据源切换」小节改造（约 8 处 await）。
- *  - Node 测试环境（node --test）没有 XMLHttpRequest，会抛出带函数名的明确错误。
+ *  - 本模块全部导出函数均为 async（基于 fetch + AbortController 超时），
+ *    后端不可达时在 ~8s 内快速失败并抛出带语义的错误「后端不可达：{原因}」，
+ *    绝不阻塞主线程（修复同步 XHR 永久挂起导致的启动/分析卡死）。
+ *  - 消费侧（appStore / AnalyzingScreen / HomeScreen / HistoryScreen / MapScreen）
+ *    通过 Promise.resolve(...) 归一化「mock 同步 / api 异步」两种返回形态。
+ *  - Node 测试环境（node --test）有全局 fetch，但 base 为空串 → URL 解析失败，
+ *    会立即以「后端不可达」拒绝，不会真实联网挂起。
  */
 
 /** 解析后端基地址：localStorage.ljx_api_base（App 内运行时配置）→ VITE_API_BASE（构建期）→ 空串（同源 /api 代理） */
@@ -32,37 +34,58 @@ function resolveApiBase() {
   return '';
 }
 
+/** 从错误对象提取人类可读的原因文本 */
+function reasonOf(e) {
+  if (!e) return '未知错误';
+  if (e && e.name === 'AbortError') return '请求超时';
+  const msg = e && e.message ? e.message : String(e);
+  // 浏览器 "Failed to fetch" / Node "fetch failed"：统一为更友好的「无法连接」
+  if (/Failed to fetch|fetch failed|NetworkError|network error/i.test(msg)) return '无法连接后端（网络不可达）';
+  return msg;
+}
+
 /**
- * 同步请求（GET / POST multipart）。
+ * 异步请求（GET / POST multipart），fetch + AbortController 超时。
  * 基地址在每次请求时动态解析（resolveApiBase）：设置页保存的 localStorage.ljx_api_base
  * 即时生效，无需重启 App（不再于模块加载时缓存）。
  * @param {string} path 如 /api/species
- * @param {object} options { method, formData }
+ * @param {object} options { method, formData, fn, timeoutMs }
+ * @returns {Promise<any>} 解析后的 JSON
+ * @throws 后端不可达 / 超时 / 非 JSON / HTTP 错误（均带语义与函数名）
  */
-function request(path, options = {}) {
+async function request(path, options = {}) {
   const fn = options.fn || path;
-  if (typeof XMLHttpRequest === 'undefined') {
-    // Node 测试环境：无同步 XHR，给出明确提示
-    throw new Error(`真实 API 未接入：请先启动后端服务并在浏览器 / Vite 环境运行（${fn}）`);
+  const timeoutMs = options.timeoutMs != null ? options.timeoutMs : 8000;
+  if (typeof fetch === 'undefined') {
+    throw new Error(`后端不可达：当前环境不支持 fetch（${fn}）`);
   }
   const base = resolveApiBase(); // 每次请求读取最新配置（App 内设置页保存后即时生效）
-  const xhr = new XMLHttpRequest();
-  xhr.open(options.method || 'GET', base + path, false); // 同步：保持 UI 零改动
+  const url = base + path;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let resp;
   try {
-    xhr.send(options.formData || null);
+    resp = await fetch(url, {
+      method: options.method || 'GET',
+      body: options.formData || undefined,
+      signal: controller.signal,
+    });
   } catch (e) {
-    throw new Error(`后端服务不可达：${e && e.message ? e.message : e}（${fn}）`);
+    throw new Error(`后端不可达：${reasonOf(e)}（${fn}）`);
+  } finally {
+    clearTimeout(timer);
   }
-  if (xhr.status >= 200 && xhr.status < 300) {
+  if (resp.status >= 200 && resp.status < 300) {
     try {
-      return JSON.parse(xhr.responseText);
+      return await resp.json();
     } catch (e) {
-      throw new Error(`后端返回非 JSON 数据：${xhr.responseText.slice(0, 120)}（${fn}）`);
+      const text = await resp.text().catch(() => '');
+      throw new Error(`后端返回非 JSON 数据：${text.slice(0, 120)}（${fn}）`);
     }
   }
-  let msg = `后端请求失败（HTTP ${xhr.status}）`;
+  let msg = `后端请求失败（HTTP ${resp.status}）`;
   try {
-    const body = JSON.parse(xhr.responseText);
+    const body = await resp.json();
     if (body && (body.error || body.detail)) msg = body.error || body.detail;
   } catch (e) {
     /* 忽略解析失败 */
@@ -70,16 +93,17 @@ function request(path, options = {}) {
   throw new Error(`${msg}（${fn}）`);
 }
 
-/** 从后端拉取静态数据端点（供 buildAnalysis / analysisForHistory 组合） */
-function fetchBaselineParts() {
-  return {
-    species: request('/api/species', { fn: 'getSpeciesList' }),
-    indices: request('/api/indices', { fn: 'getIndices' }),
-    livability: request('/api/livability', { fn: 'getLivability' }),
-    heatmap: request('/api/heatmap', { fn: 'getHeatmap' }),
-    mapPoints: request('/api/map-points', { fn: 'getMapPoints' }),
-    suggestions: request('/api/suggestions', { fn: 'getSuggestions' }),
-  };
+/** 从后端拉取静态数据端点（供 buildAnalysis / analysisForHistory 组合，并行请求） */
+async function fetchBaselineParts() {
+  const [species, indices, livability, heatmap, mapPoints, suggestions] = await Promise.all([
+    request('/api/species', { fn: 'getSpeciesList' }),
+    request('/api/indices', { fn: 'getIndices' }),
+    request('/api/livability', { fn: 'getLivability' }),
+    request('/api/heatmap', { fn: 'getHeatmap' }),
+    request('/api/map-points', { fn: 'getMapPoints' }),
+    request('/api/suggestions', { fn: 'getSuggestions' }),
+  ]);
+  return { species, indices, livability, heatmap, mapPoints, suggestions };
 }
 
 /** 与 mockData.buildAnalysis 一致的合并语义（overrides 后置、livability 深合并） */
@@ -142,11 +166,11 @@ export function getHistory() {
 }
 
 /**
- * 根据录音名 + 覆盖项构建分析结果。
+ * 根据录音名 + 覆盖项构建分析结果（async）。
  * - 若 overrides.audioFile 为 File/Blob：上传到 POST /api/analyze，返回真实完整分析；
  * - 否则（演示/历史流程，只有录音名）：组合后端各数据端点，应用与 mock 一致的合并规则。
  */
-export function buildAnalysis(name, overrides = {}) {
+export async function buildAnalysis(name, overrides = {}) {
   const audioFile = overrides && overrides.audioFile;
   if (audioFile) {
     const formData = new FormData();
@@ -154,13 +178,13 @@ export function buildAnalysis(name, overrides = {}) {
     if (overrides.threshold != null) formData.append('threshold', String(overrides.threshold));
     return request('/api/analyze', { method: 'POST', formData, fn: 'buildAnalysis' });
   }
-  const parts = fetchBaselineParts();
+  const parts = await fetchBaselineParts();
   return composeAnalysis(name, parts, overrides || {});
 }
 
-/** 由历史记录条目构建分析结果（组合端点 + 历史条目覆盖） */
-export function analysisForHistory(item) {
-  const parts = fetchBaselineParts();
+/** 由历史记录条目构建分析结果（组合端点 + 历史条目覆盖，async） */
+export async function analysisForHistory(item) {
+  const parts = await fetchBaselineParts();
   const g = gradeOf(item.score);
   const lv = {
     score: item.score,
@@ -174,6 +198,29 @@ export function analysisForHistory(item) {
     speciesCount: item.species,
     livability: lv,
   });
+}
+
+/**
+ * 连通性探测：GET {base}/health（5s 超时，不阻塞 UI）。
+ * 供设置页「保存后端地址」后立即验证地址是否可达。
+ * @param {string} [base] 待探测基地址；缺省取当前运行时配置
+ * @returns {Promise<true>} 连通返回 true
+ * @throws 不可达/超时（reason 为人类可读原因）
+ */
+export async function pingHealth(base) {
+  if (typeof fetch === 'undefined') throw new Error('当前环境不支持 fetch');
+  const url = String(base == null ? resolveApiBase() : base).replace(/\/$/, '') + '/health';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const resp = await fetch(url, { method: 'GET', signal: controller.signal });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return true;
+  } catch (e) {
+    throw new Error(reasonOf(e));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** 宜居度 → 文案与等级（纯本地逻辑，与 mockData.gradeOf 一致） */

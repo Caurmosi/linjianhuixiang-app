@@ -69,6 +69,23 @@ export function analysisForHistory(item) {
   return useApi() ? apiService.analysisForHistory(item) : mockData.analysisForHistory(item);
 }
 
+/**
+ * 纯本地演示分析（不经过网络）。
+ * 用途：appStore 初始化、AnalyzingScreen 后端不可达时的兜底演示结果。
+ * mock 同步返回；api 模式也返回 mock 结果，与数据源开关无关。
+ */
+export function buildMockAnalysis(name, overrides = {}) {
+  return mockData.buildAnalysis(name, overrides);
+}
+
+/**
+ * 后端连通性探测（GET {base}/health，5s 超时，不阻塞 UI）。
+ * 供设置页保存后端地址后立即验证连通性。
+ */
+export function pingHealth(base) {
+  return apiService.pingHealth(base);
+}
+
 /** 宜居度 → 文案与等级（转发 mockData 实现） */
 export function gradeOf(score) {
   return useApi() ? apiService.gradeOf(score) : mockData.gradeOf(score);

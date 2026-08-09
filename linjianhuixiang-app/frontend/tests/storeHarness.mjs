@@ -50,8 +50,9 @@ const initialStateSrc = extractBalanced('const initialState = ');
 const reducerSrc = extractBalanced('function reducer(state, action) ');
 
 const sandbox = {
-  buildAnalysis: repository.buildAnalysis,
+  buildMockAnalysis: repository.buildMockAnalysis,
   getHistory: repository.getHistory,
+  isMockMode: repository.isMockMode,
 };
 vm.createContext(sandbox);
 vm.runInContext(

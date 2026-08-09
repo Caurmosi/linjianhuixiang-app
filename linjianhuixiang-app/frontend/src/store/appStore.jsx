@@ -4,7 +4,7 @@
  * 使用 React Context + useReducer，无需额外依赖。
  */
 import { createContext, useContext, useReducer } from 'react';
-import { buildAnalysis, getHistory } from '../data/repository';
+import { buildMockAnalysis, getHistory, isMockMode } from '../data/repository';
 
 const AppContext = createContext(null);
 
@@ -13,10 +13,13 @@ const initialState = {
   tab: 'home', // home | results | map | me
   screenStack: [], // 子页面返回栈
   recording: '中山公园_晨.wav',
-  analysis: buildAnalysis('中山公园_晨.wav', { speciesCount: 9, livability: { score: 68, noise: 34, bio: 76, sound: 60 } }),
+  // 初始化用纯本地 mock 生成（绝不发网络请求，后端不可达也能 1s 内出 UI）
+  analysis: buildMockAnalysis('中山公园_晨.wav', { speciesCount: 9, livability: { score: 68, noise: 34, bio: 76, sound: 60 } }),
   analysisOverrides: null, // START_ANALYSIS 携带的 mock 分析覆盖项（样例 / 实时录音使用）
   audioFile: null, // START_ANALYSIS 携带的待上传音频 File/Blob（首页选文件 → 真实识别用）
-  history: getHistory(),
+  // history 懒加载：mock 模式直接取演示数据（无网络）；api 模式启动时置空，
+  // 首次进入历史页才发起请求（SET_HISTORY 写入），启动路径 0 网络请求
+  history: isMockMode() ? getHistory() : [],
   threshold: 0.5, // 置信度阈值（0.30 - 0.90）
   highpass: true, // 高通滤波降噪
   realtime: false, // 实时录音分析
@@ -60,6 +63,10 @@ function reducer(state, action) {
         tab: 'results',
         screenStack: [],
       };
+
+    case 'SET_HISTORY':
+      // 懒加载写入历史列表（首次进入历史页 fetch 后回填；失败置空数组）
+      return { ...state, history: Array.isArray(action.items) ? action.items : [] };
 
     case 'SET_THRESHOLD':
       // 钳制到 [0.30, 0.90]，与 UI 滑杆范围一致（A4）

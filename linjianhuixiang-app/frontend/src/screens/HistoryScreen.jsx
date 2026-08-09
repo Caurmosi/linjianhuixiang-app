@@ -2,9 +2,10 @@
  * HistoryScreen.jsx
  * 历史记录：完整列表（最近分析 / 更早），点击回放进入结果页
  */
+import { useEffect } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
-import { analysisForHistory } from '../data/repository';
+import { analysisForHistory, buildMockAnalysis, getHistory } from '../data/repository';
 import { IconBird, IconClock, IconChevronRight } from '../components/icons';
 
 export default function HistoryScreen() {
@@ -13,8 +14,38 @@ export default function HistoryScreen() {
   const recent = items.slice(0, 1);
   const earlier = items.slice(1);
 
-  const open = (item) => {
-    dispatch({ type: 'LOAD_HISTORY', analysis: analysisForHistory(item) });
+  // 懒加载历史列表：首次进入历史页才发起请求（mock 同步返回；api 后端不可达降级空数组 + Toast）
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve(getHistory())
+      .then((list) => {
+        if (alive) dispatch({ type: 'SET_HISTORY', items: Array.isArray(list) ? list : [] });
+      })
+      .catch((err) => {
+        if (!alive) return;
+        const reason = err && err.message ? err.message : '未知错误';
+        dispatch({ type: 'TOAST', message: `后端不可达（${reason}），历史记录暂不可用` });
+        dispatch({ type: 'SET_HISTORY', items: [] });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [dispatch]);
+
+  const open = async (item) => {
+    try {
+      // Promise.resolve 归一化 mock 同步 / api 异步两种返回
+      const analysis = await Promise.resolve(analysisForHistory(item));
+      dispatch({ type: 'LOAD_HISTORY', analysis });
+    } catch (err) {
+      const reason = err && err.message ? err.message : '未知错误';
+      const demo = buildMockAnalysis(item.name, {
+        speciesCount: item.species,
+        livability: { score: item.score, noise: item.noise ?? 40, bio: item.bio ?? 70, sound: item.sound ?? 55 },
+      });
+      dispatch({ type: 'TOAST', message: `后端不可达（${reason}），已用演示结果回放` });
+      dispatch({ type: 'LOAD_HISTORY', analysis: demo });
+    }
   };
 
   const renderItem = (item) => (
