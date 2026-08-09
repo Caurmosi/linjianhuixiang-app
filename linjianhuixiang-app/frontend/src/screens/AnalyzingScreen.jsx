@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import { buildAnalysis, buildMockAnalysis } from '../data/repository';
+import { humanizeBackendError } from '../utils/errorText';
 import { IconCheck, IconSpark } from '../components/icons';
 
 const STAGES = [
@@ -46,11 +47,11 @@ export default function AnalyzingScreen() {
         if (cancelled) return;
         dispatch({ type: 'COMPLETE_ANALYSIS', analysis });
       } catch (err) {
-        // 后端不可达：明确提示 + 用演示数据兜底，绝不无限转圈、不白屏不崩溃
+        // 识别失败（后端可达但处理出错 / 不可达等）：透传真实原因 + 演示数据兜底，不预设「不可达」
         if (cancelled) return;
-        const reason = err && err.message ? err.message : '未知错误';
+        const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
         const demo = buildMockAnalysis(recording, overrides);
-        dispatch({ type: 'TOAST', message: `后端不可达（${reason}），本次显示演示结果` });
+        dispatch({ type: 'TOAST', message: `识别失败：${reason}，本次显示演示结果` });
         dispatch({ type: 'COMPLETE_ANALYSIS', analysis: demo });
       }
     };

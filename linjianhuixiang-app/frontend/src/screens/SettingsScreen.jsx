@@ -52,7 +52,7 @@ export default function SettingsScreen() {
       dispatch({ type: 'TOAST', message: '后端已连通 ✅ 真实识别已就绪' });
     } catch (err) {
       const reason = err && err.message ? err.message : '未知错误';
-      dispatch({ type: 'TOAST', message: `地址不可达：检查后端是否启动 / 手机电脑同一 WiFi（${reason}）` });
+      dispatch({ type: 'TOAST', message: `后端连通性检测失败：${reason}，请检查后端是否启动 / 手机电脑同一 WiFi` });
     }
   };
 

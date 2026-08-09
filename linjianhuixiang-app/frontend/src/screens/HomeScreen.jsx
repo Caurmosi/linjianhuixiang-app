@@ -5,6 +5,7 @@
 import { useRef } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import { analysisForHistory, buildMockAnalysis } from '../data/repository';
+import { humanizeBackendError } from '../utils/errorText';
 import Button from '../components/ui/Button';
 import Chip from '../components/ui/Chip';
 import { isMockMode } from '../config/dataConfig.js';
@@ -157,12 +158,12 @@ export default function HomeScreen() {
       const analysis = await Promise.resolve(analysisForHistory(item));
       dispatch({ type: 'LOAD_HISTORY', analysis });
     } catch (err) {
-      const reason = err && err.message ? err.message : '未知错误';
+      const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
       const demo = buildMockAnalysis(item.name, {
         speciesCount: item.species,
         livability: { score: item.score, noise: item.noise ?? 40, bio: item.bio ?? 70, sound: item.sound ?? 55 },
       });
-      dispatch({ type: 'TOAST', message: `后端不可达（${reason}），已用演示结果回放` });
+      dispatch({ type: 'TOAST', message: `识别失败：${reason}，已用演示结果回放` });
       dispatch({ type: 'LOAD_HISTORY', analysis: demo });
     }
   };

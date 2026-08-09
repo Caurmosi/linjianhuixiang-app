@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import { analysisForHistory, buildMockAnalysis, getHistory } from '../data/repository';
+import { humanizeBackendError } from '../utils/errorText';
 import { IconBird, IconClock, IconChevronRight } from '../components/icons';
 
 export default function HistoryScreen() {
@@ -23,8 +24,8 @@ export default function HistoryScreen() {
       })
       .catch((err) => {
         if (!alive) return;
-        const reason = err && err.message ? err.message : '未知错误';
-        dispatch({ type: 'TOAST', message: `后端不可达（${reason}），历史记录暂不可用` });
+        const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
+        dispatch({ type: 'TOAST', message: `历史记录加载失败：${reason}，暂不可用` });
         dispatch({ type: 'SET_HISTORY', items: [] });
       });
     return () => {
@@ -38,12 +39,12 @@ export default function HistoryScreen() {
       const analysis = await Promise.resolve(analysisForHistory(item));
       dispatch({ type: 'LOAD_HISTORY', analysis });
     } catch (err) {
-      const reason = err && err.message ? err.message : '未知错误';
+      const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
       const demo = buildMockAnalysis(item.name, {
         speciesCount: item.species,
         livability: { score: item.score, noise: item.noise ?? 40, bio: item.bio ?? 70, sound: item.sound ?? 55 },
       });
-      dispatch({ type: 'TOAST', message: `后端不可达（${reason}），已用演示结果回放` });
+      dispatch({ type: 'TOAST', message: `识别失败：${reason}，已用演示结果回放` });
       dispatch({ type: 'LOAD_HISTORY', analysis: demo });
     }
   };
