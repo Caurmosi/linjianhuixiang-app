@@ -2,7 +2,7 @@
  * SettingsScreen.jsx
  * 设置（「我的」Tab 内容）：置信度阈值滑杆 / 高通滤波开关 / 实时录音开关 / 后端地址 / 导出与说明
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Button from '../components/ui/Button';
@@ -11,27 +11,33 @@ import Chip from '../components/ui/Chip';
 import { exportReport } from '../utils/exportReport';
 import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight } from '../components/icons';
 
+/** 读取已保存的后端地址（localStorage.ljx_api_base），读取失败按空处理 */
+function readSavedApiBase() {
+  try {
+    return (typeof localStorage !== 'undefined' && localStorage.getItem('ljx_api_base')) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
 
   const setThreshold = (v) => dispatch({ type: 'SET_THRESHOLD', value: v });
 
-  // 后端地址（localStorage.ljx_api_base），默认空 = 同源 /api
-  const [apiBase, setApiBase] = useState(() => {
-    try {
-      return (typeof localStorage !== 'undefined' && localStorage.getItem('ljx_api_base')) || '';
-    } catch (e) {
-      return '';
-    }
-  });
+  // 后端地址：非受控输入（ref + defaultValue），避免 Android IME 合成事件与 React 受控 value 冲突导致打不出字。
+  // 重新进入设置页时组件重挂载，defaultValue 重新从 localStorage 读取 → 回显最新值。
+  const apiInputRef = useRef(null);
 
   const onSaveApiBase = () => {
+    const input = apiInputRef.current;
+    if (!input) return;
     try {
-      const v = apiBase.trim().replace(/\/$/, '');
+      const v = input.value.trim().replace(/\/$/, '');
       if (v) localStorage.setItem('ljx_api_base', v);
       else localStorage.removeItem('ljx_api_base');
-      // 保存后回写 state，输入框立即显示规范化后的地址（而非空白）
-      setApiBase(v);
+      // 直接写回 input.value 回显规范化后的地址（非受控，不经 React 状态，无 IME 冲突）
+      input.value = v;
       dispatch({ type: 'TOAST', message: '后端地址已保存，下次分析自动使用真实识别' });
     } catch (err) {
       dispatch({ type: 'TOAST', message: '保存失败：' + (err && err.message ? err.message : '存储不可用') });
@@ -86,12 +92,10 @@ export default function SettingsScreen() {
         <div className="px-4 pb-4 pt-1">
           <div className="api-base-row">
             <input
+              ref={apiInputRef}
               className="api-base-input"
               type="text"
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
-              onInput={(e) => setApiBase(e.target.value)}
-              onCompositionEnd={(e) => setApiBase(e.target.value)}
+              defaultValue={readSavedApiBase()}
               placeholder="如 http://192.168.1.5:8000"
               autoComplete="off"
               spellCheck={false}

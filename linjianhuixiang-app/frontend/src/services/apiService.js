@@ -32,10 +32,10 @@ function resolveApiBase() {
   return '';
 }
 
-const API_BASE = resolveApiBase();
-
 /**
  * 同步请求（GET / POST multipart）。
+ * 基地址在每次请求时动态解析（resolveApiBase）：设置页保存的 localStorage.ljx_api_base
+ * 即时生效，无需重启 App（不再于模块加载时缓存）。
  * @param {string} path 如 /api/species
  * @param {object} options { method, formData }
  */
@@ -45,8 +45,9 @@ function request(path, options = {}) {
     // Node 测试环境：无同步 XHR，给出明确提示
     throw new Error(`真实 API 未接入：请先启动后端服务并在浏览器 / Vite 环境运行（${fn}）`);
   }
+  const base = resolveApiBase(); // 每次请求读取最新配置（App 内设置页保存后即时生效）
   const xhr = new XMLHttpRequest();
-  xhr.open(options.method || 'GET', API_BASE + path, false); // 同步：保持 UI 零改动
+  xhr.open(options.method || 'GET', base + path, false); // 同步：保持 UI 零改动
   try {
     xhr.send(options.formData || null);
   } catch (e) {
