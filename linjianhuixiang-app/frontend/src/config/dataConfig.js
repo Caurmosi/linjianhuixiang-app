@@ -64,6 +64,15 @@ function readConfiguredApiBase() {
 }
 
 /**
+ * 返回已配置的后端地址（localStorage.ljx_api_base 规范化值），未配置返回 null。
+ * 与 getDataSource/isMockMode 共享同一读取逻辑，供设置页等 UI 展示当前地址。
+ * @returns {string|null}
+ */
+export function getApiBase() {
+  return readConfiguredApiBase();
+}
+
+/**
  * 返回当前数据源类型（动态）：
  *  - 设置页配置了后端地址（localStorage.ljx_api_base 非空）→ 'api'（真实识别，免重打包）；
  *  - 否则回退构建期常量 dataSource。

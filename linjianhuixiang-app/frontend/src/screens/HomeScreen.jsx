@@ -6,11 +6,16 @@ import { useRef } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import { analysisForHistory } from '../data/repository';
 import Button from '../components/ui/Button';
+import Chip from '../components/ui/Chip';
+import { isMockMode } from '../config/dataConfig.js';
 import { IconLeaf, IconUpload, IconPlay, IconMic, IconClock, IconBird, IconChevronRight, IconInfo } from '../components/icons';
 
 export default function HomeScreen() {
   const { state, dispatch } = useApp();
   const fileRef = useRef(null);
+
+  // 数据源模式：挂载时读取一次（重进页面即刷新）
+  const mockMode = isMockMode();
 
   const startDemo = () => {
     dispatch({ type: 'START_ANALYSIS', recording: '中山公园_晨.wav' });
@@ -178,10 +183,15 @@ export default function HomeScreen() {
         <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={onFileChange} />
       </div>
 
-      {/* 一键演示 */}
-      <Button variant="sun" icon={<IconPlay size={20} />} className="mb-3.5" onClick={startDemo}>
-        一键演示（内置样例）
-      </Button>
+      {/* 一键演示 + 数据源模式徽标 */}
+      <div className="mb-3.5">
+        <Button variant="sun" icon={<IconPlay size={20} />} onClick={startDemo}>
+          一键演示（内置样例）
+        </Button>
+        <div className="mt-2 flex justify-center">
+          <Chip tone={mockMode ? 'mid' : 'good'}>{mockMode ? '演示模式' : '真实识别'}</Chip>
+        </div>
+      </div>
 
       {/* 实时录音 / 历史记录 */}
       <div className="row2">

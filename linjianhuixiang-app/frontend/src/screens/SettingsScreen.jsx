@@ -9,19 +9,15 @@ import Button from '../components/ui/Button';
 import Toggle from '../components/ui/Toggle';
 import Chip from '../components/ui/Chip';
 import { exportReport } from '../utils/exportReport';
+import { getApiBase, getDataSource } from '../config/dataConfig.js';
 import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight } from '../components/icons';
-
-/** 读取已保存的后端地址（localStorage.ljx_api_base），读取失败按空处理 */
-function readSavedApiBase() {
-  try {
-    return (typeof localStorage !== 'undefined' && localStorage.getItem('ljx_api_base')) || '';
-  } catch (e) {
-    return '';
-  }
-}
 
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
+
+  // 数据源模式：组件挂载时读取一次（进入设置页即重挂载）；保存后端地址后 Toast 触发重渲染也会同步刷新
+  const dataSource = getDataSource();
+  const apiBase = getApiBase();
 
   const setThreshold = (v) => dispatch({ type: 'SET_THRESHOLD', value: v });
 
@@ -90,12 +86,21 @@ export default function SettingsScreen() {
           </div>
         </div>
         <div className="px-4 pb-4 pt-1">
+          {/* 数据源模式指示：一眼看出当前跑演示还是真实识别 */}
+          <div className="mb-2.5 flex items-center gap-2">
+            <Chip tone={dataSource === 'api' ? 'good' : 'mid'}>{dataSource === 'api' ? '真实识别' : '演示模式'}</Chip>
+            {dataSource === 'api' ? (
+              <span className="faint min-w-0 flex-1 truncate text-[12px]">后端 {apiBase}</span>
+            ) : (
+              <span className="faint min-w-0 flex-1 text-[12px]">填写后端地址后自动切换真实识别</span>
+            )}
+          </div>
           <div className="api-base-row">
             <input
               ref={apiInputRef}
               className="api-base-input"
               type="text"
-              defaultValue={readSavedApiBase()}
+              defaultValue={apiBase || ''}
               placeholder="如 http://192.168.1.5:8000"
               autoComplete="off"
               spellCheck={false}
