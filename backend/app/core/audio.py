@@ -2,9 +2,10 @@
 audio.py —— 音频解码与预处理管线
 
 解码策略（依赖最小化）：
-  - wav / flac / ogg / aiff：直接 soundfile 读取（内存 BytesIO）；
-  - mp3 / webm / m4a / aac：调用 ffmpeg 转成 48kHz 单声道 s16le wav 再读取；
-    若系统无 ffmpeg，抛出带明确提示的解码错误。
+  - wav / flac / ogg / aiff / mp3：直接 soundfile 读取（内存 BytesIO；
+    libsndfile ≥1.1 内置 mp3 解码，mp3 无需 ffmpeg）；
+  - webm / m4a / aac：调用 ffmpeg 转成 48kHz 单声道 s16le wav 再读取
+    （libsndfile 不支持的容器；若系统无 ffmpeg，抛出带明确提示的解码错误）。
 
 预处理：
   1) 统一 48kHz 单声道 float32
@@ -65,8 +66,8 @@ def decode_audio(data: bytes, filename: str) -> tuple[np.ndarray, int]:
     if ext not in ALLOWED_EXTENSIONS:
         raise AudioError(f"不支持的音频格式：{ext or '未知'}（允许：{', '.join(sorted(ALLOWED_EXTENSIONS))}）")
 
-    # 1) soundfile 直接可读的容器
-    if ext in {".wav", ".flac", ".ogg", ".aiff", ".aif"}:
+    # 1) soundfile 直接可读的容器（libsndfile 1.2.2 内置 mp3 解码，无需 ffmpeg）
+    if ext in {".wav", ".flac", ".ogg", ".aiff", ".aif", ".mp3"}:
         try:
             with io.BytesIO(data) as buf:
                 y, sr = sf.read(buf, dtype="float32", always_2d=False)
@@ -102,10 +103,10 @@ def _decode_with_ffmpeg(data: bytes, filename: str) -> tuple[np.ndarray, int]:
         return _to_mono(y), int(sr)
     except FileNotFoundError:
         raise AudioError(
-            "系统缺少 ffmpeg，无法解码 mp3/webm/m4a 等格式。"
+            "系统缺少 ffmpeg，无法解码 webm/m4a/aac 等格式。"
             "请安装 ffmpeg（https://ffmpeg.org），"
             "或在 FFMPEG_PATH 环境变量 / 项目 backend/ffmpeg/bin 目录下放置 ffmpeg 可执行文件，"
-            "或上传 wav 文件。"
+            "或上传 wav/mp3 文件。"
         )
 
 
