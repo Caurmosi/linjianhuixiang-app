@@ -99,7 +99,8 @@ body {
   .phone-frame {
     border-radius: 0;
     padding: 0;
-    height: 100vh;
+    height: 100vh; /* 回退：老 WebView 不支持 dvh */
+    height: 100dvh; /* 现代 WebView：跟随软键盘弹出收缩 */
     max-height: none;
   }
   .screen {
