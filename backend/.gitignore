@@ -14,6 +14,9 @@ models/*.csv
 assets/sample_*.wav
 assets/real_soundscape.wav
 
+# ffmpeg 静态构建（大文件不入库；后端通过 backend/ffmpeg/bin 自动发现）
+ffmpeg/
+
 # 环境
 .env
 

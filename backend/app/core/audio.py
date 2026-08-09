@@ -15,6 +15,7 @@ audio.py —— 音频解码与预处理管线
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -28,6 +29,29 @@ from ..config import ALLOWED_EXTENSIONS, TARGET_BITS, TARGET_SR
 
 class AudioError(Exception):
     """音频解码 / 校验失败。"""
+
+
+# 项目内约定 ffmpeg 位置：audio.py 在 backend/app/core/，向上 3 级到 backend/ffmpeg/bin
+_PROJECT_FFMPEG_DIR = Path(__file__).resolve().parent.parent.parent / "ffmpeg" / "bin"
+
+
+def _ffmpeg_exe() -> str:
+    """解析 ffmpeg 可执行文件路径（优先级从高到低）：
+
+    1. 环境变量 FFMPEG_PATH（若设置且指向存在的文件）；
+    2. 项目内约定路径 backend/ffmpeg/bin/ffmpeg(.exe)（静态构建，不依赖系统 PATH）；
+    3. 系统 PATH 中的 "ffmpeg"。
+
+    仅在路径存在时返回绝对路径，否则回退下一级；最终返回字符串命令名。
+    """
+    env = os.environ.get("FFMPEG_PATH")
+    if env and Path(env).is_file():
+        return env
+    for name in ("ffmpeg.exe", "ffmpeg"):
+        cand = _PROJECT_FFMPEG_DIR / name
+        if cand.is_file():
+            return str(cand)
+    return "ffmpeg"
 
 
 def supported_extension(filename: str) -> bool:
@@ -62,7 +86,7 @@ def _decode_with_ffmpeg(data: bytes, filename: str) -> tuple[np.ndarray, int]:
         try:
             proc = subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", tmp_path,
+                    _ffmpeg_exe(), "-y", "-i", tmp_path,
                     "-vn", "-ac", "1", "-ar", str(TARGET_SR),
                     "-f", "wav", "-acodec", "pcm_s16le", "-",
                 ],
@@ -79,7 +103,9 @@ def _decode_with_ffmpeg(data: bytes, filename: str) -> tuple[np.ndarray, int]:
     except FileNotFoundError:
         raise AudioError(
             "系统缺少 ffmpeg，无法解码 mp3/webm/m4a 等格式。"
-            "请安装 ffmpeg（https://ffmpeg.org），或上传 wav 文件。"
+            "请安装 ffmpeg（https://ffmpeg.org），"
+            "或在 FFMPEG_PATH 环境变量 / 项目 backend/ffmpeg/bin 目录下放置 ffmpeg 可执行文件，"
+            "或上传 wav 文件。"
         )
 
 
