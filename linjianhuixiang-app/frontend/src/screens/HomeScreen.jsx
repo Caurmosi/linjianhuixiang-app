@@ -60,7 +60,8 @@ export default function HomeScreen() {
   };
 
   const onRecord = async () => {
-    // 实时录音：真机走 MediaRecorder 真实采集 + 原生桥保存；录音 File 随 START_ANALYSIS 走真实识别链路
+    // 实时录音：真机新壳优先走原生 MediaRecorder 桥（绕开 WebView getUserMedia 不可靠，
+    // vivo S30 / file:// 场景尤甚）；旧壳/无桥降级浏览器 getUserMedia；任何失败均回退演示分析
     const fallback = () => {
       // 无音频数据的演示分析（AnalyzingScreen 无 audioFile 时走 mock 组合）
       dispatch({ type: 'START_ANALYSIS', recording: '实时录音_演示.wav' });
@@ -73,7 +74,79 @@ export default function HomeScreen() {
     const ts = () => String(Date.now());
     const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
 
-    // 1) 真机：先申请录音权限；失败则 Toast 并回退演示分析
+    // dataUrl → Blob：优先 fetch；失败则手动 atob 构造（兼容老 WebView 拦截 data: fetch）
+    const dataUrlToBlob = async (dataUrl) => {
+      try {
+        const resp = await fetch(dataUrl);
+        if (resp.ok) return await resp.blob();
+      } catch (e) {
+        // 落到 atob 兜底
+      }
+      const comma = dataUrl.indexOf(',');
+      const meta = /^data:([^;]*)(?:;base64)?$/i.exec(dataUrl.slice(0, comma));
+      const mime = meta && meta[1] ? meta[1] : 'audio/mp4';
+      const bin = atob(dataUrl.slice(comma + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type: mime });
+    };
+
+    // getUserMedia 失败原因细化（不吞掉具体原因）
+    const getUserMediaErrorText = (err) => {
+      const name = err && err.name ? err.name : '';
+      switch (name) {
+        case 'NotAllowedError':
+          return '未获得麦克风权限，请在系统设置中允许';
+        case 'NotFoundError':
+          return '未找到麦克风设备';
+        case 'NotReadableError':
+          return '麦克风被占用';
+        default:
+          return `无法获取麦克风权限（${name || '未知错误'}）`;
+      }
+    };
+
+    // 1) 真机新壳：原生 MediaRecorder 录音（m4a），彻底绕开 WebView getUserMedia
+    if (bridge && typeof bridge.startNativeRecord === 'function') {
+      let ok = false;
+      try {
+        ok = bridge.startNativeRecord() === true;
+      } catch (err) {
+        ok = false;
+      }
+      if (!ok) {
+        dispatch({ type: 'TOAST', message: '录音启动失败，请检查麦克风权限，已回退到演示分析' });
+        fallback();
+        return;
+      }
+      dispatch({ type: 'TOAST', message: '正在录音 10 秒…' });
+      window.setTimeout(async () => {
+        let dataUrl = '';
+        try {
+          dataUrl = bridge.stopNativeRecord();
+        } catch (err) {
+          dataUrl = '';
+        }
+        if (!dataUrl) {
+          dispatch({ type: 'TOAST', message: '录音失败，已回退到演示分析' });
+          fallback();
+          return;
+        }
+        try {
+          const blob = await dataUrlToBlob(dataUrl);
+          const name = '实时录音_' + ts() + '.m4a';
+          const audioFile = new File([blob], name, { type: 'audio/mp4' });
+          dispatch({ type: 'TOAST', message: '录音完成，开始分析' });
+          startAnalysis(name, audioFile);
+        } catch (err) {
+          dispatch({ type: 'TOAST', message: '录音失败，已回退到演示分析' });
+          fallback();
+        }
+      }, 10000);
+      return;
+    }
+
+    // 2) 真机旧壳：先申请录音权限；失败则 Toast 并回退演示分析
     if (bridge && typeof bridge.requestRecordPermission === 'function') {
       let granted = false;
       try {
@@ -88,6 +161,7 @@ export default function HomeScreen() {
       }
     }
 
+    // 3) 浏览器 / 无桥：getUserMedia + MediaRecorder 降级路径
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
         dispatch({ type: 'TOAST', message: '当前浏览器不支持实时录音，已回退到演示分析' });
@@ -101,7 +175,7 @@ export default function HomeScreen() {
           : {};
       const recorder = new MediaRecorder(stream, options);
       const chunks = [];
-      // 2) 收集真实音频数据
+      // 收集真实音频数据
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunks.push(e.data);
       };
@@ -113,7 +187,7 @@ export default function HomeScreen() {
         // 合并录音数据 → File，随 START_ANALYSIS 传入 AnalyzingScreen 走真实上传识别
         const audioFile = blob ? new File([blob], name, { type: mimeType }) : null;
         if (audioFile && bridge && typeof bridge.saveAudio === 'function') {
-          // 3) 转 base64 → 原生桥保存到本地
+          // 转 base64 → 原生桥保存到本地
           const reader = new FileReader();
           const finish = (saved) => {
             dispatch({ type: 'TOAST', message: saved ? '录音已保存到手机' : '录音完成，开始分析' });
@@ -131,7 +205,7 @@ export default function HomeScreen() {
           reader.onerror = () => finish(false);
           reader.readAsDataURL(blob);
         } else {
-          // 5) 无桥 / 无数据：降级为不带 audioFile 的 START_ANALYSIS，AnalyzingScreen 走 mock 组合
+          // 无桥 / 无数据：降级为不带 audioFile 的 START_ANALYSIS，AnalyzingScreen 走 mock 组合
           dispatch({ type: 'TOAST', message: '录音完成，开始分析' });
           startAnalysis(name, audioFile);
         }
@@ -142,7 +216,7 @@ export default function HomeScreen() {
       }, 10000);
       dispatch({ type: 'TOAST', message: '正在录音 10 秒…' });
     } catch (err) {
-      dispatch({ type: 'TOAST', message: '无法获取麦克风权限，已回退到演示分析' });
+      dispatch({ type: 'TOAST', message: `${getUserMediaErrorText(err)}，已回退到演示分析` });
       fallback();
     }
   };
