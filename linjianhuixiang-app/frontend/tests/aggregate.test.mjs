@@ -197,6 +197,27 @@ test('map: 全部无坐标 → summary.map 为 null（地图页引导手动选�
   assert.equal(summary.map, null);
 });
 
+test('segments: 各段录音信息清单（name/score/from/hasGps），无坐标段 hasGps=false', () => {
+  const withGps = buildAnalysis('g1.wav', {
+    lng: 116.391284,
+    lat: 39.907139,
+    from: 'gps',
+    livability: { score: 72, noise: 25, bio: 80, sound: 68 },
+  });
+  const withoutGps = buildAnalysis('g2.wav', {
+    from: 'manual',
+    livability: { score: 55, noise: 45, bio: 60, sound: 50 },
+  });
+  const summary = aggregateAnalyses([withGps, withoutGps]);
+  assert.equal(summary.segments.length, 2, '全部段都应列出（含无定位段）');
+  assert.deepEqual(summary.segments[0], { name: 'g1.wav', score: 72, from: 'gps', hasGps: true });
+  assert.deepEqual(summary.segments[1], { name: 'g2.wav', score: 55, from: 'manual', hasGps: false });
+});
+
+test('segments: 空数组 → 空清单', () => {
+  assert.deepEqual(aggregateAnalyses([]).segments, []);
+});
+
 test('waveform: 取最长录音的波形（多段同长取第一段）', () => {
   const long = buildAnalysis('长.wav');
   long.waveform = Array.from({ length: 200 }, () => 0.5);

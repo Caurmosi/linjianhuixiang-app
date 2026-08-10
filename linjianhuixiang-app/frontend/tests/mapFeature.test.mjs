@@ -19,6 +19,7 @@ import {
   mapFromSummary,
   circleColorExpression,
   pickAmapTileUrl,
+  fixedPoint,
   DEFAULT_CENTER,
 } from '../src/components/map/mapUtils.js';
 import * as repository from '../src/data/repository.js';
@@ -138,12 +139,37 @@ describe('normalizeMapData / mapFromSummary（mapData 构建与读取）', () =>
 });
 
 describe('高德瓦片 URL（无 key）', () => {
-  test('pickAmapTileUrl：webrd0{1..4} 随机子域 + x/y/z 模板', () => {
+  test('pickAmapTileUrl：webrd0{1..4} 随机子域 + style=7（不带注记）+ x/y/z 模板', () => {
     for (let i = 0; i < 20; i++) {
       const url = pickAmapTileUrl();
       assert.match(url, /^https:\/\/webrd0[1-4]\.is\.autonavi\.com\/appmaptile\?lang=zh_cn/);
+      assert.ok(url.includes('style=7'), '底图应为 style=7（干净路网，不带注记/POI）');
+      assert.ok(!url.includes('style=8'), '不应再使用带注记的 style=8');
       assert.ok(url.includes('{x}') && url.includes('{y}') && url.includes('{z}'), '应含瓦片坐标模板');
     }
+  });
+});
+
+describe('fixedPoint（手动固定段坐标）', () => {
+  test('将指定段坐标更新为手动点：from 置 manual，保留 name/score，返回新数组', () => {
+    const pts = [
+      { lng: 116.39, lat: 39.9, name: '第1段', score: 72, from: 'gps' },
+      { lng: 116.4, lat: 39.8, name: '第2段', score: 55, from: 'manual' },
+    ];
+    const next = fixedPoint(pts, 1, { lng: 116.42, lat: 39.82 });
+    assert.notEqual(next, pts, '应返回新数组（不可变）');
+    assert.deepEqual(next[1], { lng: 116.42, lat: 39.82, name: '第2段', score: 55, from: 'manual' });
+    assert.deepEqual(next[0], pts[0], '其它段不受影响');
+    assert.equal(pts[1].lng, 116.4, '原数组不应被修改');
+  });
+
+  test('idx 越界 / 坐标非法 → 返回原数组不变', () => {
+    const pts = [{ lng: 1, lat: 2, name: '第1段', score: 50, from: 'manual' }];
+    assert.equal(fixedPoint(pts, 5, { lng: 1, lat: 1 }), pts, 'idx 越界');
+    assert.equal(fixedPoint(pts, -1, { lng: 1, lat: 1 }), pts, 'idx 负数');
+    assert.equal(fixedPoint(pts, 0, { lng: 'x', lat: 1 }), pts, 'lng 非法');
+    assert.equal(fixedPoint(pts, 0, null), pts, '坐标缺失');
+    assert.deepEqual(fixedPoint([], 0, { lng: 1, lat: 1 }), [], '空数组返回空');
   });
 });
 
@@ -184,12 +210,15 @@ describe('屏幕接线（源码断言：MapScreen / RegionScreen / RecordScreen�
     assert.match(map, /SET_BATCH_MAP/, '简化固定写入 batchSummary.map');
     assert.match(map, /录音分布/, '地图区块标题');
     assert.match(map, /重新调整/, '锁定视图可重新调整');
+    assert.match(map, /segments=\{summary\.segments \|\| \[\]\}/, 'MapPicker 注入各段录音信息');
   });
 
-  test('MapScreen 单点分析视图：空间分布空态引导（不再引用静态 MapChart）', () => {
+  test('MapScreen 单点分析视图：仅时间热力图，无「空间分布」tab/空态/静态 MapChart', () => {
     const map = read('screens/MapScreen.jsx');
     assert.ok(!/MapChart/.test(map), 'MapScreen 不应再引用静态 MapChart');
-    assert.match(map, /先完成多段分析，再在地图上标记位置/, '空态引导文案');
+    assert.ok(!/空间分布/.test(map), '不应再有「空间分布」tab');
+    assert.ok(!/先完成多段分析，再在地图上标记位置/.test(map), '不应再有空间分布空态引导');
+    assert.match(map, /时间热力图/, '时间热力图保留');
   });
 
   test('RegionScreen 渲染 detail.map（mapFromSummary + MapCanvas 锁定视图）', () => {
@@ -205,5 +234,40 @@ describe('屏幕接线（源码断言：MapScreen / RegionScreen / RecordScreen�
     assert.match(s, /from: 'gps'/, 'GPS 坐标标记');
     assert.match(s, /from: 'manual'/, '无位置手动补');
     assert.match(s, /lng: null, lat: null/, '无位置 lng/lat 空');
+  });
+});
+
+describe('MapPicker 交互重构（搜索非受控 / GPS·手动 / 可拖动浮标）', () => {
+  const src = read('components/map/MapPicker.jsx');
+
+  test('搜索框非受控：defaultValue + onFocus select + onInput，无受控 value', () => {
+    assert.match(src, /defaultValue=""/, '搜索框用 defaultValue（非受控）');
+    assert.match(src, /onFocus=\{\(e\) => e\.target\.select\(\)\}/, '聚焦全选，便于整体替换');
+    assert.match(src, /onInput=\{\(e\) => setQuery\(e\.target\.value\)\}/, 'onInput 实时读取当前值');
+    assert.match(src, /searchRef/, '搜索逻辑用 ref 值');
+    assert.ok(!/value=\{query\}/.test(src), '不应有受控 value={query}');
+    assert.ok(!/onChange=\{\(e\) => setQuery\(e\.target\.value\)\}/.test(src), '不应有受控 onChange 同步');
+  });
+
+  test('GPS / 手动模式切换：默认 GPS，含两个模式 tab', () => {
+    assert.match(src, /useState\('gps'\)/, '默认 GPS 模式');
+    assert.match(src, /GPS 定位/, 'GPS 模式 tab');
+    assert.match(src, /手动选点/, '手动选点 tab');
+    assert.match(src, /switchMode\('gps'\)/, 'GPS 切换');
+    assert.match(src, /switchMode\('manual'\)/, '手动切换');
+  });
+
+  test('手动模式：底部录音列表 + 可拖动浮标 + 确认固定', () => {
+    assert.match(src, /ljx-seg-list/, '底部「导入录音」列表容器');
+    assert.match(src, /ljx-seg-chip/, '录音段小卡片');
+    assert.match(src, /new Marker\(\{ draggable: true/, '可拖动浮标（maplibregl.Marker draggable）');
+    assert.match(src, /marker\.on\('dragend'/, 'dragend 记录拖动坐标');
+    assert.match(src, /确认固定此点/, '确认固定按钮');
+    assert.match(src, /from: 'manual'/, '手动固定标记 from:manual');
+  });
+
+  test('简化固定：无已定位段时禁用，回调仅含已定位段', () => {
+    assert.match(src, /locatedCount === 0/, '无已定位段禁用简化固定');
+    assert.match(src, /locatedPoints\.slice\(\)/, '固定回调只含已定位段');
   });
 });

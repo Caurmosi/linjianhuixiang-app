@@ -799,6 +799,10 @@ body {
   outline: none;
   box-sizing: border-box;
   margin-bottom: 16px;
+  /* Android IME：允许文本选择 / 光标可见（规避合成事件与受控 value 冲突后的输入不可见问题） */
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: var(--ink);
 }
 .save-panel-input:focus {
   border-color: var(--forest-500);
@@ -1348,6 +1352,87 @@ body {
 .map-picker-fixed-actions {
   display: flex;
   justify-content: flex-end;
+}
+/* 手动模式：底部「导入录音」横向列表 + 段卡片 + 确认固定 */
+.ljx-seg-panel {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--paper);
+  padding: 10px 10px 12px;
+  margin-bottom: 10px;
+}
+.ljx-seg-panel-head {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+.ljx-seg-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.ljx-seg-list::-webkit-scrollbar {
+  display: none;
+}
+.ljx-seg-chip {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 96px;
+  max-width: 132px;
+  padding: 9px 11px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-family: var(--f-body);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+.ljx-seg-chip:active {
+  background: var(--paper-2);
+}
+.ljx-seg-chip.on {
+  border-color: var(--sun);
+  background: #fbf2dd;
+}
+.ljx-seg-chip.located {
+  border-color: var(--forest-400);
+}
+.ljx-seg-chip .ljx-seg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+.ljx-seg-chip.located .ljx-seg-dot {
+  background: var(--forest-500);
+}
+.ljx-seg-chip.on .ljx-seg-dot {
+  background: var(--sun);
+}
+.ljx-seg-chip b {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.ljx-seg-chip i {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.ljx-seg-chip.located i {
+  color: var(--forest-600);
 }
 .map-unsupported {
   display: flex;

@@ -145,11 +145,12 @@ describe('MapScreen.jsx：多录音综合视图（需求 D）', () => {
     // 渲染区块（宜居度大卡/物种清单/热力图/声景分布）断言见 regionDetail.test.js
   });
 
-  test('保留原单点分析视图（无 batchSummary）：时间热力图照旧，空间分布显示空态引导', () => {
+  test('单点分析视图（无 batchSummary）：仅时间热力图，已移除「空间分布」tab/空态', () => {
     assert.match(map, /声景地图/);
     assert.match(map, /时间热力图/);
-    // 空间分布：多段聚合后才能在地图上标点 → 空态引导（替代原静态 MapChart）
-    assert.match(map, /先完成多段分析，再在地图上标记位置/);
+    // 旧「空间分布」tab（空态引导）已移除：与「录音分布」真实地图重复，用户认为多余
+    assert.ok(!/空间分布/.test(map), '已移除「空间分布」tab');
+    assert.ok(!/先完成多段分析，再在地图上标记位置/.test(map), '已移除空间分布空态引导');
     // 综合视图才有 MapPicker/MapCanvas 渲染（真实地图入口）
     assert.match(map, /MapPicker/, '综合视图引用 MapPicker 引导');
     assert.match(map, /MapCanvas/, '综合视图引用 MapCanvas 真实地图');

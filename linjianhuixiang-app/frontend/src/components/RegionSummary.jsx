@@ -3,18 +3,19 @@
  * 地区记录完整综合详情（公共展示组件）。
  * 输入 summary —— 一条 region 记录的 detail 快照（聚合 summary，与单 analysis 顶层字段对齐），
  * 渲染「完整综合数据」：宜居度大卡（Ring + 等级）+ 统计行（识别鸟种 / 人为噪声）+
- * 物种清单（按 count 降序或原序）+ 声学指数（四卡片）+ 时间热力图 / 声景分布（分段切换）+
+ * 物种清单（按 count 降序或原序）+ 声学指数（四卡片）+ 时间热力图 +
  * 录音波形 + 时长。
+ *
+ * 说明：旧静态样点图已移除——真实地图统一由
+ * 「录音分布」（MapLibre + 高德瓦片）渲染，避免静态图与真实地图并存重复。
  *
  * 空数据守卫：summary 缺失 / 任意字段缺失 / 空数组均优雅降级（占位或跳过区块），绝不崩溃。
  * 被 MapScreen 综合视图（batchSummary）与 RegionScreen 单条详情（record.detail）复用。
  */
-import { useState } from 'react';
 import Ring from './Ring';
 import Chip from './ui/Chip';
 import Bar from './ui/Bar';
 import HeatmapChart from './charts/HeatmapChart';
-import MapChart from './charts/MapChart';
 import WaveformChart from './charts/WaveformChart';
 import { gradeOf, livabilityDesc } from '../data/repository';
 
@@ -25,8 +26,6 @@ function sortedSpecies(list) {
 }
 
 export default function RegionSummary({ summary }) {
-  const [seg, setSeg] = useState('heat');
-
   // 空数据守卫：summary 缺失 / 非对象 → 占位提示
   if (!summary || typeof summary !== 'object') {
     return (
@@ -51,9 +50,6 @@ export default function RegionSummary({ summary }) {
   const indices = Array.isArray(summary.indices) ? summary.indices : [];
   const heat =
     Array.isArray(summary.heatmap) && summary.heatmap.length > 0 ? summary.heatmap : null;
-  const mapPoints = Array.isArray(summary.mapPoints) ? summary.mapPoints : [];
-  const segmentPoints = Array.isArray(summary.segmentPoints) ? summary.segmentPoints : [];
-  const points = mapPoints.length > 0 ? mapPoints : segmentPoints;
   const waveform = Array.isArray(summary.waveform) ? summary.waveform : [];
   const speciesCount =
     typeof summary.speciesCount === 'number'
@@ -128,48 +124,18 @@ export default function RegionSummary({ summary }) {
         </>
       )}
 
-      {/* 时间热力图 / 声景分布 分段切换 */}
-      <div className="seg" style={{ marginTop: 16 }}>
-        <button className={seg === 'heat' ? 'on' : ''} onClick={() => setSeg('heat')}>
-          时间热力图
-        </button>
-        <button className={seg === 'map' ? 'on' : ''} onClick={() => setSeg('map')}>
-          空间分布
-        </button>
+      {/* 时间热力图（旧静态样点图已移除，真实地图见「录音分布」） */}
+      <div className="heat-wrap" style={{ marginTop: 16 }}>
+        <h4>时段 × 频段</h4>
+        <div className="cap">{heat ? '鸟声活跃度 · 聚合平均' : '该条记录暂无热力图数据'}</div>
+        {heat ? <HeatmapChart data={heat} /> : <div className="cap">暂无热力图数据</div>}
+        <div className="legend">
+          <span>弱</span>
+          <span className="scale" />
+          <span>强</span>
+          <span className="ml-auto">频段：低 → 高</span>
+        </div>
       </div>
-
-      {seg === 'heat' ? (
-        <div className="heat-wrap">
-          <h4>时段 × 频段</h4>
-          <div className="cap">{heat ? '鸟声活跃度 · 聚合平均' : '该条记录暂无热力图数据'}</div>
-          {heat ? <HeatmapChart data={heat} /> : <div className="cap">暂无热力图数据</div>}
-          <div className="legend">
-            <span>弱</span>
-            <span className="scale" />
-            <span>强</span>
-            <span className="ml-auto">频段：低 → 高</span>
-          </div>
-        </div>
-      ) : (
-        <div className="map-wrap">
-          <h4>声景分布</h4>
-          <div className="cap">
-            {points.length > 0 ? `${points.length} 个样点 · 按宜居度着色` : '该条记录暂无样点数据'}
-          </div>
-          {points.length > 0 ? <MapChart points={points} /> : <div className="cap">暂无样点数据</div>}
-          <div className="legend">
-            <Chip tone="good" className="!px-2 !py-0.5">
-              宜居
-            </Chip>
-            <Chip tone="mid" className="!px-2 !py-0.5">
-              一般
-            </Chip>
-            <Chip tone="bad" className="!px-2 !py-0.5">
-              受压
-            </Chip>
-          </div>
-        </div>
-      )}
 
       {/* 录音波形 + 时长 */}
       {waveform.length > 0 && (

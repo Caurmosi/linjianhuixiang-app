@@ -2,12 +2,11 @@
  * MapScreen.jsx
  * 声景地图：
  *  - 有 batchSummary（多录音聚合综合）→ 综合视图：复用 <RegionSummary summary={batchSummary} />
- *    渲染完整综合数据（宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 声景分布 + 波形），
- *    并提供「录音分布」真实地图（MapLibre+高德瓦片）：已有简化固定地图 → MapCanvas 锁定视图，
- *    无地图 → MapPicker 引导（搜索地名 / 拖动缩放 / 点击加点 → 简化固定）；
- *    以及「保存地区记录」（命名输入 → saveRegion → 同名自动归组）+「清除综合，返回首页」；
- *  - 无 batchSummary → 原单点分析视图：分段切换「时间热力图 / 空间分布」，
- *    空间分布显示「先完成多段分析，再在地图上标记位置」空态引导；
+ *    渲染完整综合数据（宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 波形），
+ *    并提供「录音分布」真实地图（MapLibre+高德瓦片，style=7 干净底图）：
+ *    已有简化固定地图 → MapCanvas 锁定视图，无地图 → MapPicker 引导
+ *    （搜索地名 / GPS·手动选点 / 拖动浮标 → 简化固定）；以及「保存地区记录」+「清除综合，返回首页」；
+ *  - 无 batchSummary → 原单点分析视图：仅「时间热力图」（已移除与真实地图重复的旧占位 tab）；
  *  - 两种视图下均展示「地区记录」区块：按名称分组、组内按时间升序，点击进入地区详情（趋势对比）。
  */
 import { useEffect, useState } from 'react';
@@ -42,7 +41,6 @@ function groupRegionsByName(regions) {
 
 export default function MapScreen() {
   const { state, dispatch } = useApp();
-  const [seg, setSeg] = useState('heat');
   // 地区记录：列表 + 保存命名面板 + 行删除二次确认
   const regions = state.regions || [];
   const [showSavePanel, setShowSavePanel] = useState(false);
@@ -212,10 +210,10 @@ export default function MapScreen() {
       <div>
         <AppBar title={`本区域 ${n} 段录音综合`} onBack={() => dispatch({ type: 'BACK' })} />
 
-        {/* 完整综合数据：宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 声景分布 + 波形 */}
+        {/* 完整综合数据：宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 波形 */}
         <RegionSummary summary={summary} />
 
-        {/* 录音分布：真实地图（MapLibre + 高德瓦片）——
+        {/* 录音分布：真实地图（MapLibre + 高德瓦片 style=7 干净底图）——
             已有简化固定地图 → MapCanvas 锁定视图；无地图 → MapPicker 引导 */}
         <div className="map-wrap">
           <h4>录音分布</h4>
@@ -224,6 +222,7 @@ export default function MapScreen() {
               initialCenter={mapData ? mapData.center : undefined}
               initialZoom={mapData ? mapData.zoom : 12}
               points={mapData ? mapData.points : []}
+              segments={summary.segments || []}
               onFixed={handleFixed}
             />
           ) : mapData ? (
@@ -252,11 +251,12 @@ export default function MapScreen() {
             </>
           ) : (
             <>
-              <div className="cap">搜索地名定位 · 拖动缩放 · 点击地图添加录音点 → 简化固定</div>
+              <div className="cap">搜索地名定位 · GPS/手动选点 · 拖动浮标 → 简化固定</div>
               <MapPicker
                 initialCenter={undefined}
                 initialZoom={12}
                 points={[]}
+                segments={summary.segments || []}
                 onFixed={handleFixed}
               />
             </>
@@ -283,45 +283,22 @@ export default function MapScreen() {
     );
   }
 
-  // ---- 原单点分析视图 ----
+  // ---- 原单点分析视图（仅时间热力图；旧占位 tab 已移除，与「录音分布」真实地图重复） ----
   return (
     <div>
       <AppBar title="声景地图" onBack={() => dispatch({ type: 'BACK' })} />
 
-      <div className="seg">
-        <button className={seg === 'heat' ? 'on' : ''} onClick={() => setSeg('heat')}>
-          时间热力图
-        </button>
-        <button className={seg === 'map' ? 'on' : ''} onClick={() => setSeg('map')}>
-          空间分布
-        </button>
+      <div className="heat-wrap">
+        <h4>本次录音 时段 × 频段</h4>
+        <div className="cap">真实时频能量 · {a.recording || '中山公园_晨.wav'}</div>
+        <HeatmapChart data={a.heatmap} />
+        <div className="legend">
+          <span>弱</span>
+          <span className="scale" />
+          <span>强</span>
+          <span className="ml-auto">频段：低 → 高</span>
+        </div>
       </div>
-
-      {seg === 'heat' ? (
-        <div className="heat-wrap">
-          <h4>本次录音 时段 × 频段</h4>
-          <div className="cap">真实时频能量 · {a.recording || '中山公园_晨.wav'}</div>
-          <HeatmapChart data={a.heatmap} />
-          <div className="legend">
-            <span>弱</span>
-            <span className="scale" />
-            <span>强</span>
-            <span className="ml-auto">频段：低 → 高</span>
-          </div>
-        </div>
-      ) : (
-        <div className="map-wrap">
-          <h4>空间分布</h4>
-          <div className="cap">真实地图 · 多段录音聚合后在地图上标记位置</div>
-          <div className="py-4 text-center">
-            <p className="text-[12.5px] font-bold">先完成多段分析，再在地图上标记位置</p>
-            <p className="text-[11px] text-ink-soft mt-1">
-              在「实时录音」录制 ≥2 段，或在首页导入多段音频完成批量分析后，
-              即可在综合页搜索地名 / 手动选点标记各段录音位置
-            </p>
-          </div>
-        </div>
-      )}
 
       {renderRegionBlock()}
     </div>

@@ -10,6 +10,7 @@
  *  - indices 四个指数取平均，格式与单 analysis.indices 一致（key/name/display/pct/desc）；
  *  - heatmap 逐格平均（4×12）；
  *  - mapPoints 每段一个样点：x/y 在 50~285 / 30~150 均匀分布，c 按该段宜居度等级，t 仅奇数段标「第N段」；
+ *  - segments 各段录音信息清单（name/score/from/hasGps），供 MapPicker 底部「导入录音」列表与手动选点；
  *  - waveform 取最长录音的波形（拼接成本高且价值有限，取最长一段并注释说明重合度取舍）；
  *  - durationSec 为各段时长之和（各段 analysis.durationSec 由录音界面注入，缺失按 0 计）。
  */
@@ -139,6 +140,25 @@ function buildMapPointsGeo(analyses) {
 }
 
 /**
+ * 各段录音信息清单（MapPicker 底部「导入录音」列表数据源）。
+ * 每段 {name: 录音文件名, score: 该段宜居度, from, hasGps}；
+ * 无坐标段 hasGps=false，由 MapPicker 手动选点补齐。
+ */
+function buildSegments(analyses) {
+  return analyses.map((a, i) => {
+    const lng = Number(a && a.lng);
+    const lat = Number(a && a.lat);
+    const score = a && a.livability && typeof a.livability.score === 'number' ? a.livability.score : 50;
+    return {
+      name: a && typeof a.recording === 'string' && a.recording ? a.recording : `第${i + 1}段`,
+      score,
+      from: a && a.from === 'gps' ? 'gps' : 'manual',
+      hasGps: Number.isFinite(lng) && Number.isFinite(lat),
+    };
+  });
+}
+
+/**
  * 多录音聚合（D）
  * @param {Array<object>} analyses 多个完整 analysis（buildAnalysis 输出形态）
  * @returns {object} 综合摘要；空数组返回一份「零值」摘要（守卫，不抛错）
@@ -154,6 +174,7 @@ export function aggregateAnalyses(analyses) {
     livability: { score: 0, grade: '受压', gradeEn: 'Stressed', noise: 0, bio: 0, sound: 0 },
     heatmap: averageHeatmap(list),
     mapPoints: [],
+    segments: [],
     map: null,
     waveform: [],
     durationSec: 0,
@@ -178,6 +199,9 @@ export function aggregateAnalyses(analyses) {
 
   // 空间样点：每段一个
   summary.mapPoints = buildMapPoints(list);
+
+  // 各段录音信息（名称/宜居度/定位状态），供 MapPicker 手动选点列表
+  summary.segments = buildSegments(list);
 
   // 真实地图：各段 GPS 坐标并入 summary.map.points（无坐标 → map 为 null，地图页引导手动选点）
   const geoPoints = buildMapPointsGeo(list);

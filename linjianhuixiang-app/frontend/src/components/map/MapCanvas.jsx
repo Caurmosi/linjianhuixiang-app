@@ -2,7 +2,7 @@
  * MapCanvas.jsx
  * 真实地图组件（MapLibre GL v6 + 高德公开栅格瓦片，无 key）。
  *
- * - 底图：高德瓦片（style=8 带注记，子域 webrd0{1..4} 随机选一个固定）；
+ * - 底图：高德瓦片（style=7 不带注记，子域 webrd0{1..4} 随机选一个固定）；
  * - 标点：GeoJSON source + circle 层（数据驱动 interpolate 渐变配色：score≥70 绿 / 50 琥珀 / <50 红）+
  *   circle-stroke 白边 + symbol 层 label（name 或「段N」）；
  * - interactive=false：dragPan/scrollZoom/boxZoom/doubleClickZoom/keyboard/touchZoomRotate 全部禁用（简化固定视图）；

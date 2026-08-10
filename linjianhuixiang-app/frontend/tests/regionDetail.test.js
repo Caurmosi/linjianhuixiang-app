@@ -32,7 +32,7 @@ describe('A. RegionSummary 公共组件', () => {
     assert.match(region, /<RegionSummary summary=\{selected\.detail\}\s*\/>/, 'RegionScreen 单条详情复用 RegionSummary');
   });
 
-  test('渲染关键区块：宜居度大卡 + 统计行 + 物种清单 + 声学指数 + 热力图 + 声景分布 + 波形', () => {
+  test('渲染关键区块：宜居度大卡 + 统计行 + 物种清单 + 声学指数 + 热力图 + 波形（无静态空间分布）', () => {
     const s = read('components/RegionSummary.jsx');
     // 宜居度大卡（Ring + 等级）
     assert.match(s, /liv-hero/, '宜居度大卡容器');
@@ -52,10 +52,10 @@ describe('A. RegionSummary 公共组件', () => {
     // 时间热力图
     assert.match(s, /时间热力图/);
     assert.match(s, /<HeatmapChart data=\{heat\}\s*\/>/, 'HeatmapChart 渲染');
-    // 声景分布
-    assert.match(s, /空间分布/);
-    assert.match(s, /声景分布/, '地图区块标题');
-    assert.match(s, /<MapChart points=\{points\}\s*\/>/, 'MapChart 渲染');
+    // 静态空间分布已移除：真实地图统一由「录音分布」（MapLibre+高德瓦片）渲染，避免重复
+    assert.ok(!/MapChart/.test(s), '不应再引用静态 MapChart');
+    assert.ok(!/空间分布/.test(s), '不应再有「空间分布」tab');
+    assert.ok(!/声景分布/.test(s), '不应再有静态声景分布区块');
     // 录音波形 + 时长
     assert.match(s, /录音波形/);
     assert.match(s, /<WaveformChart data=\{waveform\}\s*\/>/, 'WaveformChart 渲染');
@@ -68,18 +68,14 @@ describe('A. RegionSummary 公共组件', () => {
     assert.match(s, /!summary \|\| typeof summary !== 'object'/, 'summary 缺失 → 占位');
     assert.match(s, /暂无综合数据/, '缺失占位文案');
     // 数组字段全部走 Array.isArray 守卫
-    for (const f of ['indices', 'heatmap', 'mapPoints', 'waveform']) {
+    for (const f of ['indices', 'heatmap', 'waveform']) {
       assert.match(s, new RegExp(`Array\\.isArray\\(summary\\.${f}\\)`), `字段 ${f} 应有数组守卫`);
     }
     // species 在 sortedSpecies 辅助函数内做数组守卫（非数组返回空数组）
     assert.match(s, /function sortedSpecies\(list\)[\s\S]*Array\.isArray\(list\)/, 'species 应经 sortedSpecies 数组守卫');
     assert.match(s, /sortedSpecies\(summary\.species\)/, 'species 走守卫排序');
-    // segmentPoints 回退
-    assert.match(s, /Array\.isArray\(summary\.segmentPoints\)/, 'segmentPoints 回退守卫');
-    assert.match(s, /mapPoints\.length > 0 \? mapPoints : segmentPoints/, 'mapPoints 优先，segmentPoints 回退');
     // 空数组占位文案
     assert.match(s, /暂无热力图数据/, '热力图空数据占位');
-    assert.match(s, /暂无样点数据/, '样点空数据占位');
     // 波形空数组 → 整块不渲染（守卫在 length > 0 条件内）
     assert.match(s, /waveform\.length > 0 &&/, '波形空数组不渲染该区块');
     // 宜居度缺失 → 用 0 兜底，不抛错
@@ -121,9 +117,9 @@ describe('B. RegionScreen 单条详情', () => {
 });
 
 describe('C. summary 数据形状（RegionSummary 输入前提）', () => {
-  test('聚合摘要字段齐全：livability/species/indices/heatmap/mapPoints/waveform/durationSec', () => {
+  test('聚合摘要字段齐全：livability/species/indices/heatmap/mapPoints/segments/waveform/durationSec', () => {
     const summary = aggregateAnalyses([buildAnalysis('第1段.wav'), buildAnalysis('第2段.wav')]);
-    for (const key of ['recording', 'speciesCount', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'waveform', 'durationSec']) {
+    for (const key of ['recording', 'speciesCount', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'segments', 'waveform', 'durationSec']) {
       assert.ok(key in summary, `综合摘要缺少字段 ${key}`);
     }
     assert.equal(typeof summary.livability.score, 'number');
@@ -131,6 +127,7 @@ describe('C. summary 数据形状（RegionSummary 输入前提）', () => {
     assert.ok(Array.isArray(summary.indices));
     assert.ok(Array.isArray(summary.heatmap));
     assert.ok(Array.isArray(summary.mapPoints));
+    assert.ok(Array.isArray(summary.segments));
     assert.ok(Array.isArray(summary.waveform));
   });
 
@@ -142,9 +139,6 @@ describe('C. summary 数据形状（RegionSummary 输入前提）', () => {
     const species = (Array.isArray(ragged.species) ? ragged.species : []).slice();
     const indices = Array.isArray(ragged.indices) ? ragged.indices : [];
     const heat = Array.isArray(ragged.heatmap) && ragged.heatmap.length > 0 ? ragged.heatmap : null;
-    const mapPoints = Array.isArray(ragged.mapPoints) ? ragged.mapPoints : [];
-    const segmentPoints = Array.isArray(ragged.segmentPoints) ? ragged.segmentPoints : [];
-    const points = mapPoints.length > 0 ? mapPoints : segmentPoints;
     const waveform = Array.isArray(ragged.waveform) ? ragged.waveform : [];
     const speciesCount =
       typeof ragged.speciesCount === 'number'
@@ -156,7 +150,6 @@ describe('C. summary 数据形状（RegionSummary 输入前提）', () => {
     assert.deepEqual(species, []);
     assert.deepEqual(indices, []);
     assert.equal(heat, null);
-    assert.deepEqual(points, []);
     assert.deepEqual(waveform, []);
     assert.equal(speciesCount, '—');
   });

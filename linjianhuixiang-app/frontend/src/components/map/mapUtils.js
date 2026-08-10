@@ -114,10 +114,36 @@ export function mapFromSummary(summary) {
   return normalizeMapData(summary.map);
 }
 
-/** 高德瓦片子域随机（webrd0{1..4} 随机选一个固定，实测无需 key） */
+/** 高德瓦片子域随机（webrd0{1..4} 随机选一个固定，实测无需 key）。
+ *  style=7：纯路网底图，不带注记 / POI 标记，底图干净（style=8 注记过多，视觉杂乱）。 */
 export function pickAmapTileUrl() {
   const sub = 1 + Math.floor(Math.random() * 4);
-  return `https://webrd0${sub}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}`;
+  return `https://webrd0${sub}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}`;
+}
+
+/**
+ * 手动固定某一段的坐标：返回新数组，将 points[idx] 更新为指定位置
+ * （保留原 name/score，from 置为 'manual'）。
+ * idx 越界 / 坐标非法 / 非数组 → 返回原数组（不修改）。
+ * @param {Array<object>} points 标点数组（{lng,lat,name,score,from}）
+ * @param {number} idx 段序号下标
+ * @param {{lng:number, lat:number}} loc 手动固定坐标
+ * @returns {Array<object>}
+ */
+export function fixedPoint(points, idx, loc) {
+  const list = Array.isArray(points) ? points : [];
+  if (!Number.isInteger(idx) || idx < 0 || idx >= list.length) return list;
+  if (!loc || !Number.isFinite(Number(loc.lng)) || !Number.isFinite(Number(loc.lat))) return list;
+  const prev = list[idx] && typeof list[idx] === 'object' ? list[idx] : {};
+  const next = list.slice();
+  next[idx] = {
+    lng: Number(loc.lng),
+    lat: Number(loc.lat),
+    name: typeof prev.name === 'string' && prev.name ? prev.name : `段${idx + 1}`,
+    score: Number.isFinite(Number(prev.score)) ? Number(prev.score) : 50,
+    from: 'manual',
+  };
+  return next;
 }
 
 /** 默认中心：北京市天安门附近（GCJ-02） */
