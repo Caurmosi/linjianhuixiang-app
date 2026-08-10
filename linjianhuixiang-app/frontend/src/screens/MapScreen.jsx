@@ -50,8 +50,8 @@ export default function MapScreen() {
 
       {seg === 'heat' ? (
         <div className="heat-wrap">
-          <h4>录音内鸟声活跃度</h4>
-          <div className="cap">时段 × 频段强度 · {a.recording || '中山公园_晨.wav'}</div>
+          <h4>本次录音 时段 × 频段</h4>
+          <div className="cap">真实时频能量 · {a.recording || '中山公园_晨.wav'}</div>
           <HeatmapChart data={a.heatmap} />
           <div className="legend">
             <span>弱</span>
@@ -60,10 +60,27 @@ export default function MapScreen() {
             <span className="ml-auto">频段：低 → 高</span>
           </div>
         </div>
+      ) : a.segmentPoints && a.segmentPoints.length > 0 ? (
+        <div className="map-wrap">
+          <h4>本次录音声景分布</h4>
+          <div className="cap">录音按时间切片 · {a.segmentPoints.length} 个片段</div>
+          <MapChart points={a.segmentPoints} />
+          <div className="legend">
+            <Chip tone="good" className="!px-2 !py-0.5">
+              宜居
+            </Chip>
+            <Chip tone="mid" className="!px-2 !py-0.5">
+              一般
+            </Chip>
+            <Chip tone="bad" className="!px-2 !py-0.5">
+              受压
+            </Chip>
+          </div>
+        </div>
       ) : (
         <div className="map-wrap">
           <h4>样点空间分布</h4>
-          {/* 多绿地切换器 */}
+          {/* 多绿地切换器（segmentPoints 缺失时回退：模拟对比样点） */}
           <div className="seg green-switch" style={{ marginBottom: 10 }}>
             {greenSpaces.map((g, i) => (
               <button key={g.id} className={i === greenIndex ? 'on' : ''} onClick={() => setGreenIndex(i)}>
@@ -72,7 +89,7 @@ export default function MapScreen() {
             ))}
           </div>
           <div className="cap">
-            {green.name} · {green.points.length} 个监测样点
+            {green.name} · {green.points.length} 个监测样点 · 模拟对比样点
           </div>
           <MapChart points={green.points} />
           <div className="legend">

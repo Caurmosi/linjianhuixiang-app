@@ -145,8 +145,17 @@ def test_analyze_bird_sample_contract(client):
     data = r.json()
 
     # 顶层契约字段
-    for field in ["recording", "species", "indices", "livability", "heatmap", "mapPoints", "suggestions", "speciesCount"]:
+    for field in ["recording", "species", "indices", "livability", "heatmap", "mapPoints", "suggestions", "speciesCount", "waveform", "segmentPoints"]:
         assert field in data, f"analyze 缺少字段 {field}"
+
+    # 波形：长度约 160、值域 [0,1]
+    assert isinstance(data["waveform"], list) and len(data["waveform"]) > 0
+    for v in data["waveform"]:
+        assert 0.0 <= v <= 1.0
+    # 分段样点：含 x/y/c/t
+    assert isinstance(data["segmentPoints"], list) and len(data["segmentPoints"]) > 0
+    for p in data["segmentPoints"]:
+        assert {"x", "y", "c", "t"} <= set(p.keys())
 
     # 数值合理
     lv = data["livability"]

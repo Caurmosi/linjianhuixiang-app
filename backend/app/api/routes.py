@@ -93,9 +93,19 @@ def get_heatmap() -> list[list[float]]:
     return _latest_or("heatmap", baseline.BASELINE_HEATMAP)
 
 
+@router.get("/api/waveform", response_model=list[float], tags=["data"])
+def get_waveform() -> list[float]:
+    return _latest_or("waveform", baseline.BASELINE_WAVEFORM)
+
+
 @router.get("/api/map-points", response_model=list[schemas.MapPoint], tags=["data"])
 def get_map_points() -> list[dict]:
     return _latest_or("mapPoints", baseline.BASELINE_MAP_POINTS)
+
+
+@router.get("/api/segment-points", response_model=list[schemas.MapPoint], tags=["data"])
+def get_segment_points() -> list[dict]:
+    return _latest_or("segmentPoints", baseline.BASELINE_SEGMENT_POINTS)
 
 
 @router.get("/api/green-spaces", response_model=list[schemas.GreenSpace], tags=["data"])
@@ -187,8 +197,10 @@ async def analyze(
     lv = livability_mod.compute_livability(len(species), mean_conf, activity, idx, noise_ratio)
 
     # 4) 合成可视化数据
-    heatmap = synthesis.heatmap(idx, lv["noise"], activity, freqs, S)
+    heatmap = synthesis.heatmap(y, freqs, S, activity, lv["noise"])
+    wave = synthesis.waveform(y)
     points = synthesis.map_points(lv["score"], seed=hash(filename) & 0xFFFFFFFF)
+    seg_points = synthesis.segment_points(y, lv["score"], seed=hash(filename) & 0xFFFFFFFF)
     green = synthesis.green_spaces(filename, lv["score"])
     sugg = synthesis.suggestions(lv, idx, len(species))
 
@@ -198,7 +210,9 @@ async def analyze(
         "indices": idx["indices"],
         "livability": lv,
         "heatmap": heatmap,
+        "waveform": wave,
         "mapPoints": points,
+        "segmentPoints": seg_points,
         "greenSpaces": green,
         "suggestions": sugg,
         "speciesCount": len(species),

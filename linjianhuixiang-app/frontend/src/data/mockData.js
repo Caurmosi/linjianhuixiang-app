@@ -42,6 +42,14 @@ export const HEATMAP = [
   [0.5, 0.6, 0.8, 0.7, 0.5, 0.4, 0.3, 0.4, 0.5, 0.4, 0.3, 0.2],
 ];
 
+// 录音波形：160 个 [0,1] 峰值包络值（中段更活跃，供结果页画波形）
+export const WAVEFORM = Array.from({ length: 160 }, (_, i) => {
+  const t = i / 159;
+  const base = 0.35 + 0.55 * Math.sin(Math.PI * t);
+  const ripples = 0.18 * Math.sin(7 * t * Math.PI) * Math.sin(3 * t * Math.PI + 0.5);
+  return Number(Math.max(0.04, Math.min(1, base + ripples)).toFixed(3));
+});
+
 // 空间分布样点（默认绿地 = 中山公园）
 export const MAP_POINTS = [
   { x: 70, y: 55, c: '#2e7d52', t: '宜居' },
@@ -50,6 +58,16 @@ export const MAP_POINTS = [
   { x: 105, y: 120, c: '#d49a26', t: '' },
   { x: 250, y: 90, c: '#c25a39', t: '受压' },
   { x: 175, y: 55, c: '#2e7d52', t: '' },
+];
+
+// 按时间切片的演示声景样点（录音分段：x 按段序、y 按段能量、c 按段等级）
+export const SEGMENT_POINTS = [
+  { x: 50, y: 90, c: '#d49a26', t: '开始' },
+  { x: 97, y: 62, c: '#2e7d52', t: '' },
+  { x: 144, y: 55, c: '#2e7d52', t: '' },
+  { x: 191, y: 78, c: '#d49a26', t: '' },
+  { x: 238, y: 120, c: '#c25a39', t: '' },
+  { x: 285, y: 95, c: '#d49a26', t: '结束' },
 ];
 
 // 多绿地对比：每个绿地的样点数组（颜色/标签体现宜居/一般/受压差异）
@@ -119,6 +137,9 @@ export function buildAnalysis(name, overrides = {}) {
     suggestions: SUGGESTIONS,
     speciesCount: count,
     ...rest,
+    // overrides 展开后显式补默认（参照 livability 合并模式）：未覆盖时用演示值，避免 undefined
+    waveform: rest.waveform ?? WAVEFORM,
+    segmentPoints: rest.segmentPoints ?? SEGMENT_POINTS,
     livability: { ...LIVABILITY, ...(rest.livability || {}) },
   };
   return merged;

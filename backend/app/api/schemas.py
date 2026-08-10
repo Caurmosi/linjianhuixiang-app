@@ -71,6 +71,9 @@ class AnalysisResult(BaseModel):
     # 附加信息（前端忽略未知字段，不影响契约）
     engine: str | None = None
     durationSec: float | None = None
+    # 录音波形（峰值包络，[0,1] 归一化）与按时间切片的声景样点
+    waveform: list[float] = []
+    segmentPoints: list[MapPoint] = []
 
 
 class Health(BaseModel):

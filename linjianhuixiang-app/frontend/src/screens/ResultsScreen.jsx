@@ -5,6 +5,7 @@
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Ring from '../components/Ring';
+import WaveformChart from '../components/charts/WaveformChart';
 import { gradeOf, livabilityDesc } from '../data/repository';
 import { exportReport } from '../utils/exportReport';
 import { IconShare, IconDoc, IconChart, IconHeat, IconGlobe } from '../components/icons';
@@ -62,6 +63,16 @@ export default function ResultsScreen() {
           <div className="l">人为噪声占比</div>
         </div>
       </div>
+
+      {Array.isArray(a.waveform) && a.waveform.length > 0 ? (
+        <div className="wave-wrap">
+          <div className="wave-head">
+            <h4>录音波形</h4>
+            {a.durationSec ? <span className="wave-dur">{a.durationSec}s</span> : null}
+          </div>
+          <WaveformChart data={a.waveform} />
+        </div>
+      ) : null}
 
       <div className="eyebrow mb-2.5">查看详情</div>
       <div className="quick">

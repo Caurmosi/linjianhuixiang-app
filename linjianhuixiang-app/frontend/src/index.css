@@ -582,6 +582,28 @@ body {
   color: var(--ink-soft);
   margin-top: 4px;
 }
+.wave-wrap {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.wave-wrap .wave-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.wave-wrap .wave-head h4 {
+  font-size: 13px;
+  font-weight: 700;
+}
+.wave-wrap .wave-dur {
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-family: var(--f-mono);
+}
 .quick {
   display: grid;
   grid-template-columns: 1fr 1fr;

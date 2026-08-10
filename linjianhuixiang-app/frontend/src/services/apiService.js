@@ -95,15 +95,17 @@ async function request(path, options = {}) {
 
 /** 从后端拉取静态数据端点（供 buildAnalysis / analysisForHistory 组合，并行请求） */
 async function fetchBaselineParts() {
-  const [species, indices, livability, heatmap, mapPoints, suggestions] = await Promise.all([
+  const [species, indices, livability, heatmap, mapPoints, suggestions, waveform, segmentPoints] = await Promise.all([
     request('/api/species', { fn: 'getSpeciesList' }),
     request('/api/indices', { fn: 'getIndices' }),
     request('/api/livability', { fn: 'getLivability' }),
     request('/api/heatmap', { fn: 'getHeatmap' }),
     request('/api/map-points', { fn: 'getMapPoints' }),
     request('/api/suggestions', { fn: 'getSuggestions' }),
+    request('/api/waveform', { fn: 'getWaveform' }),
+    request('/api/segment-points', { fn: 'getSegmentPoints' }),
   ]);
-  return { species, indices, livability, heatmap, mapPoints, suggestions };
+  return { species, indices, livability, heatmap, mapPoints, suggestions, waveform, segmentPoints };
 }
 
 /** 与 mockData.buildAnalysis 一致的合并语义（overrides 后置、livability 深合并） */
@@ -120,6 +122,9 @@ function composeAnalysis(name, parts, overrides = {}) {
     suggestions: parts.suggestions,
     speciesCount: count,
     ...rest,
+    // 后端返回直接透传；缺失时补空数组（上传路径由 /api/analyze 返回真实字段）
+    waveform: rest.waveform ?? parts.waveform ?? [],
+    segmentPoints: rest.segmentPoints ?? parts.segmentPoints ?? [],
     livability: { ...parts.livability, ...(rest.livability || {}) },
   };
   return merged;
@@ -145,9 +150,19 @@ export function getHeatmap() {
   return request('/api/heatmap', { fn: 'getHeatmap' });
 }
 
+/** 录音波形（[0,1] 峰值包络） */
+export function getWaveform() {
+  return request('/api/waveform', { fn: 'getWaveform' });
+}
+
 /** 空间分布样点 */
 export function getMapPoints() {
   return request('/api/map-points', { fn: 'getMapPoints' });
+}
+
+/** 按时间切片的声景样点 */
+export function getSegmentPoints() {
+  return request('/api/segment-points', { fn: 'getSegmentPoints' });
 }
 
 /** 多绿地对比 */

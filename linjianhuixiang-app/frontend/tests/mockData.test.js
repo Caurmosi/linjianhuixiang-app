@@ -9,7 +9,9 @@ import {
   INDICES,
   LIVABILITY,
   HEATMAP,
+  WAVEFORM,
   MAP_POINTS,
+  SEGMENT_POINTS,
   GREEN_SPACES,
   SUGGESTIONS,
   HISTORY,
@@ -116,6 +118,26 @@ describe('HEATMAP / MAP_POINTS / SUGGESTIONS 结构', () => {
     }
   });
 
+  test('WAVEFORM 为 160 个 [0,1] 数值（录音波形数据）', () => {
+    assert.equal(WAVEFORM.length, 160);
+    for (const v of WAVEFORM) {
+      assert.equal(typeof v, 'number');
+      assert.ok(v >= 0 && v <= 1, `波形值越界: ${v}`);
+    }
+  });
+
+  test('SEGMENT_POINTS 每个样点包含 x/y/c/t，首末为开始/结束', () => {
+    assert.ok(SEGMENT_POINTS.length > 0);
+    for (const p of SEGMENT_POINTS) {
+      assert.equal(typeof p.x, 'number', '缺少数字 x');
+      assert.equal(typeof p.y, 'number', '缺少数字 y');
+      assert.match(p.c, /^#[0-9a-fA-F]{6}$/, `颜色非法: ${p.c}`);
+      assert.ok('t' in p, '缺少 t 字段');
+    }
+    assert.equal(SEGMENT_POINTS[0].t, '开始');
+    assert.equal(SEGMENT_POINTS[SEGMENT_POINTS.length - 1].t, '结束');
+  });
+
   test('GREEN_SPACES 至少 2 个绿地，样点与 MAP_POINTS 结构一致', () => {
     assert.ok(GREEN_SPACES.length >= 2, `应至少 2 个绿地，实际 ${GREEN_SPACES.length}`);
     for (const g of GREEN_SPACES) {
@@ -156,15 +178,17 @@ describe('HISTORY 历史记录结构', () => {
 });
 
 describe('buildAnalysis 分析结果构建', () => {
-  test('默认输出包含全部 8 个顶层字段', () => {
+  test('默认输出包含全部 10 个顶层字段', () => {
     const a = buildAnalysis('测试.wav');
-    for (const k of ['recording', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'suggestions', 'speciesCount']) {
+    for (const k of ['recording', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'suggestions', 'speciesCount', 'waveform', 'segmentPoints']) {
       assert.ok(k in a, `缺少字段 ${k}`);
     }
     assert.equal(a.recording, '测试.wav');
     assert.equal(a.speciesCount, SPECIES.length);
     assert.equal(a.species, SPECIES);
     assert.equal(a.livability.score, 68);
+    assert.equal(a.waveform, WAVEFORM);
+    assert.equal(a.segmentPoints, SEGMENT_POINTS);
   });
 
   test('overrides.livability 与默认 LIVABILITY 合并', () => {

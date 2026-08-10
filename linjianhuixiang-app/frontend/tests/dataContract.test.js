@@ -51,9 +51,9 @@ describe('数据契约：analysis 顶层字段', () => {
     }
   });
 
-  test('别名引用字段（a.recording / a.heatmap / a.mapPoints / a.suggestions / a.speciesCount / a.livability）均存在', () => {
+  test('别名引用字段（a.recording / a.heatmap / a.mapPoints / a.suggestions / a.speciesCount / a.livability / a.waveform / a.segmentPoints）均存在', () => {
     const analysisKeys = Object.keys(buildAnalysis('x.wav'));
-    for (const f of ['recording', 'heatmap', 'mapPoints', 'suggestions', 'speciesCount', 'livability']) {
+    for (const f of ['recording', 'heatmap', 'mapPoints', 'suggestions', 'speciesCount', 'livability', 'waveform', 'segmentPoints']) {
       assert.ok(analysisKeys.includes(f), `缺少 analysis.${f}`);
     }
   });
@@ -62,6 +62,23 @@ describe('数据契约：analysis 顶层字段', () => {
     const lv = buildAnalysis('x.wav').livability;
     for (const f of ['score', 'bio', 'sound', 'noise']) {
       assert.ok(f in lv, `缺少 livability.${f}`);
+    }
+  });
+
+  test('analysis.waveform 为数组，analysis.segmentPoints 为含 x/y/c/t 的样点数组', () => {
+    const a = buildAnalysis('x.wav');
+    assert.ok(Array.isArray(a.waveform), 'waveform 应为数组');
+    assert.ok(a.waveform.length > 0, 'waveform 不应为空');
+    for (const v of a.waveform) {
+      assert.equal(typeof v, 'number');
+      assert.ok(v >= 0 && v <= 1, `waveform 值应在 [0,1]: ${v}`);
+    }
+    assert.ok(Array.isArray(a.segmentPoints), 'segmentPoints 应为数组');
+    assert.ok(a.segmentPoints.length > 0, 'segmentPoints 不应为空');
+    for (const p of a.segmentPoints) {
+      for (const f of ['x', 'y', 'c', 't']) {
+        assert.ok(f in p, `segmentPoints 样点缺少字段 ${f}`);
+      }
     }
   });
 });

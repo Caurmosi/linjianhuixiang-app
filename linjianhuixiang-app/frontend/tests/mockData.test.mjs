@@ -10,7 +10,9 @@ import {
   INDICES,
   LIVABILITY,
   HEATMAP,
+  WAVEFORM,
   MAP_POINTS,
+  SEGMENT_POINTS,
   GREEN_SPACES,
   SUGGESTIONS,
   HISTORY,
@@ -99,6 +101,30 @@ test('MAP_POINTS: 6 个样点，字段完整（x/y/颜色/标签）', () => {
   }
 });
 
+test('WAVEFORM: 160 个 [0,1] 数值，保留 3 位小数', () => {
+  assert.equal(WAVEFORM.length, 160);
+  for (const v of WAVEFORM) {
+    assert.ok(typeof v === 'number' && v >= 0 && v <= 1, `波形值应在 [0,1]: ${v}`);
+    assert.equal(Number(v.toFixed(3)), v, `波形值应保留 3 位小数: ${v}`);
+  }
+  // 中段应比首尾活跃（演示包络）
+  const mid = WAVEFORM.slice(60, 100).reduce((a, b) => a + b, 0) / 40;
+  const edge = (WAVEFORM.slice(0, 20).concat(WAVEFORM.slice(140)).reduce((a, b) => a + b, 0)) / 40;
+  assert.ok(mid > edge, '波形中段应比首尾更活跃');
+});
+
+test('SEGMENT_POINTS: 6 个切片样点，字段完整（x/y/c/t），首末为开始/结束', () => {
+  assert.equal(SEGMENT_POINTS.length, 6);
+  for (const p of SEGMENT_POINTS) {
+    assert.ok(typeof p.x === 'number' && p.x >= 0, `x 应为非负数值: ${p.x}`);
+    assert.ok(typeof p.y === 'number' && p.y >= 0, `y 应为非负数值: ${p.y}`);
+    assert.match(p.c, /^#[0-9a-fA-F]{6}$/, `c 应为 6 位十六进制颜色: ${p.c}`);
+    assert.equal(typeof p.t, 'string', `t 应为字符串（可为空）: ${p.t}`);
+  }
+  assert.equal(SEGMENT_POINTS[0].t, '开始');
+  assert.equal(SEGMENT_POINTS[SEGMENT_POINTS.length - 1].t, '结束');
+});
+
 test('GREEN_SPACES: 多绿地对比数据 —— 3 个绿地，样点结构完整且默认绿地与 MAP_POINTS 一致', () => {
   assert.equal(GREEN_SPACES.length, 3);
   const names = GREEN_SPACES.map((g) => g.name);
@@ -158,9 +184,11 @@ test('buildAnalysis: 默认构建完整分析结果，覆盖所有屏幕引用�
   assert.equal(a.livability.bio, 76);
   assert.equal(a.livability.sound, 60);
   // 屏幕引用的关键字段（Results/Livability/Indices/Map/Species 均依赖）
-  for (const key of ['recording', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'suggestions', 'speciesCount']) {
+  for (const key of ['recording', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'suggestions', 'speciesCount', 'waveform', 'segmentPoints']) {
     assert.ok(key in a, `analysis 缺少屏幕引用字段: ${key}`);
   }
+  assert.equal(a.waveform, WAVEFORM, '默认 waveform 应为演示波形');
+  assert.equal(a.segmentPoints, SEGMENT_POINTS, '默认 segmentPoints 应为演示切片样点');
   for (const key of ['score', 'noise', 'bio', 'sound']) {
     assert.ok(key in a.livability, `analysis.livability 缺少字段: ${key}`);
   }
@@ -205,6 +233,18 @@ test('buildAnalysis: A3 自洽 —— speciesCount 截断 species，超过 SPECI
 test('buildAnalysis: 空数据容错 —— species 可覆盖为空数组且不抛错', () => {
   const a = buildAnalysis('x.wav', { species: [] });
   assert.deepEqual(a.species, []);
+});
+
+test('buildAnalysis: overrides 可覆盖 waveform/segmentPoints，未覆盖时用默认演示值', () => {
+  const custom = buildAnalysis('x.wav', {
+    waveform: [1, 0, 1],
+    segmentPoints: [{ x: 60, y: 80, c: '#2e7d52', t: '' }],
+  });
+  assert.deepEqual(custom.waveform, [1, 0, 1]);
+  assert.equal(custom.segmentPoints.length, 1);
+  const plain = buildAnalysis('x.wav');
+  assert.equal(plain.waveform, WAVEFORM);
+  assert.equal(plain.segmentPoints, SEGMENT_POINTS);
 });
 
 test('analysisForHistory: 每条历史记录都能正确还原为分析结果', () => {

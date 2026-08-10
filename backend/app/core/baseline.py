@@ -6,6 +6,19 @@ baseline.py —— 演示基准数据（与前端 mockData.js 完全一致）
 """
 from __future__ import annotations
 
+import math
+
+
+def _demo_waveform(n: int = 160) -> list[float]:
+    """演示波形：中段活跃的峰值包络（与前端 mockData.WAVEFORM 同式）。"""
+    out = []
+    for i in range(n):
+        t = i / (n - 1)
+        base = 0.35 + 0.55 * math.sin(math.pi * t)
+        ripples = 0.18 * math.sin(7 * t * math.pi) * math.sin(3 * t * math.pi + 0.5)
+        out.append(round(max(0.04, min(1.0, base + ripples)), 3))
+    return out
+
 BASELINE_SPECIES = [
     {"id": 1, "name": "白头鹎", "latin": "Pycnonotus sinensis", "conf": 0.93, "freq": 21, "period": "清晨"},
     {"id": 2, "name": "麻雀", "latin": "Passer montanus", "conf": 0.88, "freq": 14, "period": "全天"},
@@ -48,6 +61,19 @@ BASELINE_MAP_POINTS = [
     {"x": 105, "y": 120, "c": "#d49a26", "t": ""},
     {"x": 250, "y": 90, "c": "#c25a39", "t": "受压"},
     {"x": 175, "y": 55, "c": "#2e7d52", "t": ""},
+]
+
+# 录音波形演示数据（与前端 mockData.WAVEFORM 一致）
+BASELINE_WAVEFORM = _demo_waveform()
+
+# 按时间切片的演示声景样点（与前端 mockData.SEGMENT_POINTS 一致）
+BASELINE_SEGMENT_POINTS = [
+    {"x": 50, "y": 90, "c": "#d49a26", "t": "开始"},
+    {"x": 97, "y": 62, "c": "#2e7d52", "t": ""},
+    {"x": 144, "y": 55, "c": "#2e7d52", "t": ""},
+    {"x": 191, "y": 78, "c": "#d49a26", "t": ""},
+    {"x": 238, "y": 120, "c": "#c25a39", "t": ""},
+    {"x": 285, "y": 95, "c": "#d49a26", "t": "结束"},
 ]
 
 BASELINE_GREEN_SPACES = [
