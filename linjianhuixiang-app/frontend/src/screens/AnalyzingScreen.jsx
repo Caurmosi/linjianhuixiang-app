@@ -3,12 +3,15 @@
  * 分析中：
  *  - 单文件模式：声波动画 + 管线步骤进度 + 实时百分比，自动推进并在 100% 后跳转结果页；
  *  - 批量模式（START_BATCH）：逐项 await buildAnalysis，BATCH_PROGRESS 推进，
- *    显示「分析 {index+1}/{total}」+ 当前录音名 + 进度动画；全部完成由 reducer 聚合后跳地图综合页。
+ *    显示「分析 {index+1}/{total}」+ 当前录音名 + 进度动画；全部完成后在本组件内
+ *    先聚合（aggregateAnalyses，已加固绝不抛错）再 dispatch COMPLETE_BATCH 跳地图综合页。
+ *    聚合不放在 reducer 内——dispatch 阶段抛错会卸载 React 树 → 白屏，故聚合一律在组件侧完成。
  * 失败兜底：单项失败用 buildMockAnalysis（与单次一致），继续下一项，绝不中断。
  */
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import { buildAnalysis, buildMockAnalysis } from '../data/repository';
+import { aggregateAnalyses } from '../utils/aggregate';
 import { humanizeBackendError } from '../utils/errorText';
 import { IconCheck, IconSpark } from '../components/icons';
 
@@ -28,6 +31,8 @@ export default function AnalyzingScreen() {
   const { state, dispatch } = useApp();
   const [progress, setProgress] = useState(0);
   const doneRef = useRef(false);
+  // 批量各段结果累积（本地权威：dispatch 是异步的，聚合不能依赖下次 render 才有的 batchResults）
+  const batchAccRef = useRef([]);
   const batchMode = state.batchMode === true;
   const batchTotal = (state.batchQueue && state.batchQueue.length) || 0;
 
@@ -57,6 +62,28 @@ export default function AnalyzingScreen() {
       // 至少展示一小段时间，让「分析 N/M」可感知（真实上传耗时通常已超过该值）
       await new Promise((resolve) => window.setTimeout(resolve, BATCH_STEP_MS));
       if (cancelled) return;
+
+      // 累积本段结果（本地权威，不依赖 dispatch 异步回读）
+      batchAccRef.current[idx] = analysis;
+
+      if (idx >= items.length - 1) {
+        // 最后一项：全部结果已齐 → 同步聚合（aggregateAnalyses 已加固绝不抛错）→ 跳地图综合页。
+        // 聚合在 dispatch 之前同步完成：避免 await 间隙被 effect cleanup 打断导致跳转丢失。
+        const results = batchAccRef.current.filter(Boolean);
+        let summary;
+        try {
+          summary = aggregateAnalyses(results);
+        } catch (err) {
+          // 防御分支：aggregateAnalyses 自带兜底理论上不会触发，此处保底不白屏
+          dispatch({ type: 'TOAST', message: '综合分析失败，请重试' });
+          summary = aggregateAnalyses(results);
+        }
+        // 连续 dispatch（React 18 自动批处理为一次渲染）：落结果 + 写综合摘要跳地图
+        dispatch({ type: 'BATCH_PROGRESS', index: idx, result: analysis });
+        dispatch({ type: 'COMPLETE_BATCH', summary });
+        return;
+      }
+
       dispatch({ type: 'BATCH_PROGRESS', index: idx, result: analysis });
     };
 

@@ -124,8 +124,13 @@ describe('appStore.jsx：批量状态与 action（需求 B）', () => {
     }
   });
 
-  test('BATCH_PROGRESS 全部完成时调用聚合函数（aggregateAnalyses）', () => {
-    assert.match(store, /aggregateAnalyses\(results\.filter\(Boolean\)\)/);
+  test('聚合已移出 reducer（防 dispatch 抛错白屏）：appStore 不再调用 aggregateAnalyses，AnalyzingScreen 完成聚合后 dispatch COMPLETE_BATCH', () => {
+    assert.ok(!store.includes('aggregateAnalyses('), 'reducer 内不得再调用聚合（dispatch 抛错 → React 卸载 → 白屏）');
+    assert.match(analyzing, /aggregateAnalyses\(results\)/, 'AnalyzingScreen 批量完成时聚合全部结果');
+    assert.match(analyzing, /COMPLETE_BATCH/, '聚合后 dispatch COMPLETE_BATCH 跳地图综合页');
+    assert.match(store, /case 'COMPLETE_BATCH'/, 'COMPLETE_BATCH 仍为 reducer 标准 action');
+    assert.match(store, /try\s*\{/, 'reducer 整体 try/catch 保护');
+    assert.match(store, /页面状态异常，请重试/, 'reducer 出错返回原 state + Toast，不上抛');
   });
 });
 

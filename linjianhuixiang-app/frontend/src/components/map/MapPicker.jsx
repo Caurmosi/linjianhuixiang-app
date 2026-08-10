@@ -116,10 +116,14 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
   /** 点击搜索结果 → flyTo 定位 */
   const flyTo = (r) => {
     const map = mapRef.current;
-    if (map) {
+    if (!map) {
+      toast('地图加载中，请稍候');
+      return;
+    }
+    try {
       map.flyTo({ center: [r.lng, r.lat], zoom: 15 });
-    } else {
-      toast('地图尚未就绪，请稍候重试');
+    } catch (err) {
+      toast('地图定位暂不可用，请稍候重试');
     }
   };
 
@@ -127,7 +131,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
   const selectSegment = (idx) => {
     const map = mapRef.current;
     if (!map) {
-      toast('地图尚未就绪，请稍候重试');
+      toast('地图加载中，请稍候');
       return;
     }
     clearMarkers();
@@ -137,13 +141,21 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
       seg && seg.point && Number.isFinite(Number(seg.point.lng))
         ? [seg.point.lng, seg.point.lat]
         : map.getCenter();
-    const marker = new Marker({ draggable: true, color: '#1f5a3f' }).setLngLat(start).addTo(map);
-    marker.on('dragend', () => {
-      const ll = marker.getLngLat();
-      pendingLocRef.current = { lng: ll.lng, lat: ll.lat };
-    });
-    markersRef.current.push(marker);
-    map.flyTo({ center: start, zoom: 15 });
+    try {
+      const marker = new Marker({ draggable: true, color: '#1f5a3f' }).setLngLat(start).addTo(map);
+      marker.on('dragend', () => {
+        try {
+          const ll = marker.getLngLat();
+          pendingLocRef.current = { lng: ll.lng, lat: ll.lat };
+        } catch (e) {
+          /* 浮标位置读取异常可忽略 */
+        }
+      });
+      markersRef.current.push(marker);
+      map.flyTo({ center: start, zoom: 15 });
+    } catch (err) {
+      toast('地图交互暂不可用，请稍候重试');
+    }
   };
 
   /** 确认固定：取浮标当前位置（dragend 记录优先）→ 写入该段坐标（from:'manual'） */
@@ -155,10 +167,16 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
       toast('请先点击某段录音，生成浮标');
       return;
     }
-    const loc = pendingLocRef.current || (() => {
-      const ll = marker.getLngLat();
-      return { lng: ll.lng, lat: ll.lat };
-    })();
+    let loc;
+    try {
+      loc = pendingLocRef.current || (() => {
+        const ll = marker.getLngLat();
+        return { lng: ll.lng, lat: ll.lat };
+      })();
+    } catch (err) {
+      toast('无法读取浮标位置，请重新生成');
+      return;
+    }
     setSegmentState((prev) =>
       prev.map((s, i) => {
         if (i !== activeSeg) return s;
@@ -185,19 +203,23 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
   const fix = () => {
     const map = mapRef.current;
     if (!map) {
-      toast('地图尚未就绪，请稍候重试');
+      toast('地图加载中，请稍候');
       return;
     }
-    const c = map.getCenter();
-    const data = {
-      center: [c.lng, c.lat],
-      zoom: map.getZoom(),
-      bounds: map.getBounds().toArray(),
-      points: locatedPoints.slice(),
-    };
-    setMapData(data);
-    setFixed(true);
-    if (typeof onFixed === 'function') onFixed(data);
+    try {
+      const c = map.getCenter();
+      const data = {
+        center: [c.lng, c.lat],
+        zoom: map.getZoom(),
+        bounds: map.getBounds().toArray(),
+        points: locatedPoints.slice(),
+      };
+      setMapData(data);
+      setFixed(true);
+      if (typeof onFixed === 'function') onFixed(data);
+    } catch (err) {
+      toast('地图状态异常，请稍候重试');
+    }
   };
 
   const reAdjust = () => {
@@ -311,8 +333,13 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
           interactive
           height={300}
           onMapReady={(map) => {
-            mapRef.current = map;
-            setMapReady(true);
+            // 加固：onMapReady 回调自身也 try/catch，异常不抛给 MapCanvas/React
+            try {
+              mapRef.current = map;
+              setMapReady(true);
+            } catch (e) {
+              /* 地图就绪回调异常可忽略 */
+            }
           }}
         />
       )}

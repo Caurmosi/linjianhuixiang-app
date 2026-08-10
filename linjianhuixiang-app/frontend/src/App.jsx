@@ -6,6 +6,7 @@
  */
 import { useEffect } from 'react';
 import { AppProvider, useApp } from './store/appStore.jsx';
+import ErrorBoundary from './components/ErrorBoundary';
 import BottomNav from './components/BottomNav';
 import HomeScreen from './screens/HomeScreen';
 import AnalyzingScreen from './screens/AnalyzingScreen';
@@ -66,18 +67,22 @@ function Toast() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <div className="app-bg min-h-screen w-full flex items-center justify-center py-4 sm:px-4">
-        <div className="phone-frame">
-          <div className="screen">
-            <div className="content">
-              <ActiveScreen />
+    // 全局 ErrorBoundary 包在 AppProvider 外面：任何子组件渲染/生命周期抛错
+    // 都渲染兜底页而非卸载整棵树（白屏的根治手段）
+    <ErrorBoundary>
+      <AppProvider>
+        <div className="app-bg min-h-screen w-full flex items-center justify-center py-4 sm:px-4">
+          <div className="phone-frame">
+            <div className="screen">
+              <div className="content">
+                <ActiveScreen />
+              </div>
+              <BottomNavHost />
+              <Toast />
             </div>
-            <BottomNavHost />
-            <Toast />
           </div>
         </div>
-      </div>
-    </AppProvider>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

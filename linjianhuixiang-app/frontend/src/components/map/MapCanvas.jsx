@@ -9,6 +9,13 @@
  * - 空 points → 仅底图；WebGL 不可用 → 占位提示「当前设备不支持地图渲染」；
  * - 组件卸载 → map.remove() 防泄漏。
  *
+ * 运行时加固（根治地图侧白屏）：
+ *  - new MaplibreMap 整体 try/catch：构造失败 → 渲染「地图加载失败（原因）」占位 + 重试按钮，
+ *    错误绝不上抛给 React（否则卸载整棵树 → 白屏）；
+ *  - 容器尺寸守卫：挂载时布局未就绪（clientHeight/clientWidth 为 0）先不初始化，
+ *    requestAnimationFrame 后重试（最多 N 次），防尺寸 0 构造崩溃；
+ *  - map.on('error') 监听：style 加载 / 瓦片异常 → 浮层「底图加载失败，请检查网络」，不崩溃。
+ *
  * 纯逻辑（配色/GeoJSON/默认值）抽在 ./mapUtils.js，可 Node 环境单测。
  */
 import { useEffect, useRef, useState } from 'react';
@@ -29,6 +36,9 @@ function isWebGLSupported() {
 
 /** 标点 GeoJSON 的 source 名称 */
 const POINTS_SOURCE = 'ljx-points';
+
+/** 容器尺寸未就绪时的最大重试次数（rAF 重试） */
+const MAX_SIZE_RETRY = 4;
 
 /**
  * @param {object} props
@@ -52,7 +62,11 @@ export default function MapCanvas({
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const loadedRef = useRef(false); // map 'load' 已触发
+  const initAttemptsRef = useRef(0); // 尺寸守卫重试计数
   const [unsupported, setUnsupported] = useState(false);
+  const [mapError, setMapError] = useState(null); // new Map 构造失败原因（渲染占位 + 重试）
+  const [tileError, setTileError] = useState(false); // style/瓦片加载失败 → 浮层提示
+  const [retryTick, setRetryTick] = useState(0); // 重试计数（驱动初始化 effect 重跑）
   // 用 ref 承接最新 props，避免创建 effect 闭包过期
   const propsRef = useRef({ points, onMapReady, onClick });
   propsRef.current = { points, onMapReady, onClick };
@@ -99,7 +113,15 @@ export default function MapCanvas({
     });
   };
 
-  // 创建地图（挂载一次；interactive 变化由父级通过 key 重挂载）
+  /** 手动重试：清空错误态并重跑初始化 effect */
+  const handleRetry = () => {
+    initAttemptsRef.current = 0;
+    setMapError(null);
+    setTileError(false);
+    setRetryTick((t) => t + 1);
+  };
+
+  // 创建地图（挂载一次；retryTick 变化时重跑——尺寸守卫重试 / 手动重试）
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
@@ -107,31 +129,62 @@ export default function MapCanvas({
       setUnsupported(true);
       return undefined;
     }
+
+    // 容器尺寸守卫：布局未就绪（宽/高为 0）时先不初始化，rAF 后重试（防尺寸 0 构造崩溃）
+    if (container.clientHeight === 0 || container.clientWidth === 0) {
+      initAttemptsRef.current += 1;
+      if (initAttemptsRef.current >= MAX_SIZE_RETRY) {
+        setMapError('容器尺寸未就绪，无法初始化地图');
+        return undefined;
+      }
+      const raf = window.requestAnimationFrame(() => setRetryTick((t) => t + 1));
+      return () => window.cancelAnimationFrame(raf);
+    }
+    initAttemptsRef.current = 0;
+
     const tileUrl = pickAmapTileUrl();
-    const map = new MaplibreMap({
-      container,
-      style: {
-        version: 8,
-        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-        sources: {
-          amap: { type: 'raster', tiles: [tileUrl], tileSize: 256 },
+    let map;
+    try {
+      map = new MaplibreMap({
+        container,
+        style: {
+          version: 8,
+          glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+          sources: {
+            amap: { type: 'raster', tiles: [tileUrl], tileSize: 256 },
+          },
+          layers: [{ id: 'amap', type: 'raster', source: 'amap' }],
         },
-        layers: [{ id: 'amap', type: 'raster', source: 'amap' }],
-      },
-      center,
-      zoom,
-      attributionControl: false,
-    });
+        center,
+        zoom,
+        attributionControl: false,
+      });
+    } catch (err) {
+      // 构造失败（WebGL 上下文异常 / 参数非法等）→ 占位提示 + 重试，绝不抛给 React
+      const reason = err && err.message ? String(err.message) : '未知错误';
+      setMapError(reason);
+      return undefined;
+    }
     mapRef.current = map;
+    setMapError(null);
+    setTileError(false);
+
+    // 底图错误监听：style 加载失败 / 瓦片异常 → 浮层提示（不影响页面骨架）
+    const onError = () => setTileError(true);
+    map.on('error', onError);
 
     if (!interactive) {
       // 简化固定视图：禁用全部用户交互
-      map.dragPan.disable();
-      map.scrollZoom.disable();
-      map.boxZoom.disable();
-      map.doubleClickZoom.disable();
-      map.keyboard.disable();
-      map.touchZoomRotate.disable();
+      try {
+        map.dragPan.disable();
+        map.scrollZoom.disable();
+        map.boxZoom.disable();
+        map.doubleClickZoom.disable();
+        map.keyboard.disable();
+        map.touchZoomRotate.disable();
+      } catch (e) {
+        /* 交互禁用失败可忽略（不影响底图渲染） */
+      }
     }
 
     const onLoad = () => {
@@ -142,19 +195,32 @@ export default function MapCanvas({
         /* 标点失败不影响底图 */
       }
       const cb = propsRef.current.onMapReady;
-      if (typeof cb === 'function') cb(map);
+      if (typeof cb === 'function') {
+        try {
+          cb(map);
+        } catch (e) {
+          /* 回调异常不抛给 React */
+        }
+      }
     };
     map.on('load', onLoad);
 
     const onClickHandler = (e) => {
       const cb = propsRef.current.onClick;
-      if (typeof cb === 'function') cb({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+      if (typeof cb === 'function') {
+        try {
+          cb({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+        } catch (e) {
+          /* 点击回调异常不抛给 React */
+        }
+      }
     };
     if (interactive && onClick) map.on('click', onClickHandler);
 
     return () => {
       loadedRef.current = false;
       try {
+        map.off('error', onError);
         map.off('load', onLoad);
         map.off('click', onClickHandler);
         map.remove();
@@ -164,7 +230,7 @@ export default function MapCanvas({
       mapRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryTick]);
 
   // points 变化 → 更新标点 source（map 已 load 时）
   useEffect(() => {
@@ -193,11 +259,53 @@ export default function MapCanvas({
     );
   }
 
+  if (mapError) {
+    return (
+      <div className="map-wrap map-unsupported" style={{ height }}>
+        <div className="cap" style={{ marginBottom: 0 }}>
+          地图加载失败（{mapError}）
+        </div>
+        <p className="text-[11px] text-ink-soft mt-1">可点击重试，或改用搜索定位 / 手动选择区域</p>
+        <button
+          className="btn ghost"
+          style={{ marginTop: 10, padding: '9px 14px', width: 'auto', fontSize: 13, borderRadius: 11 }}
+          onClick={handleRetry}
+        >
+          重试
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div
-      ref={containerRef}
-      className={`ljx-map-canvas${interactive ? ' ljx-map-canvas-interactive' : ''}`}
-      style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', background: '#e8eef3' }}
-    />
+    <div style={{ position: 'relative', width: '100%' }}>
+      <div
+        ref={containerRef}
+        className={`ljx-map-canvas${interactive ? ' ljx-map-canvas-interactive' : ''}`}
+        style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', background: '#e8eef3' }}
+      />
+      {tileError && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 10,
+            right: 10,
+            top: 10,
+            padding: '7px 10px',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#8a4b12',
+            background: 'rgba(251, 242, 221, 0.94)',
+            border: '1px solid #ecd9a8',
+            borderRadius: 10,
+            pointerEvents: 'none',
+            zIndex: 3,
+            textAlign: 'center',
+          }}
+        >
+          底图加载失败，请检查网络
+        </div>
+      )}
+    </div>
   );
 }

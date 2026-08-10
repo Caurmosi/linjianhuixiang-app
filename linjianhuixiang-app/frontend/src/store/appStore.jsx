@@ -3,13 +3,15 @@
  * 轻量全局状态：当前屏幕 / 底部 Tab / 分析结果 / 识别阈值 / 处理开关 / Toast
  * 使用 React Context + useReducer，无需额外依赖。
  *
- * 批量分析（B）：START_BATCH → AnalyzingScreen 逐项分析 → BATCH_PROGRESS 推进
- *   → 全部完成（BATCH_PROGRESS 内检测）构建 batchSummary（aggregateAnalyses）→ 进入地图综合页。
+ * 批量分析（B）：START_BATCH → AnalyzingScreen 逐项分析 → BATCH_PROGRESS 推进（reducer 只存结果）
+ *   → 全部完成后由 AnalyzingScreen 先聚合（aggregateAnalyses，已加固绝不抛错）构建 batchSummary
+ *   → 再 dispatch COMPLETE_BATCH（payload: summary）→ 进入地图综合页。
+ * 聚合逻辑一律在 reducer 外执行：reducer 内抛错会导致 React 卸载整棵树 → 白屏，
+ * 因此 reducer 只做纯状态存取，并整体包 try/catch（出错返回原 state + Toast，不上抛）。
  * 录音多段（C）：RecordScreen 完成 ≥2 段时直接 dispatch COMPLETE_BATCH（payload: summary）。
  */
 import { createContext, useContext, useReducer } from 'react';
 import { buildMockAnalysis, getHistory, isMockMode } from '../data/repository';
-import { aggregateAnalyses } from '../utils/aggregate';
 
 const AppContext = createContext(null);
 
@@ -42,20 +44,21 @@ const initialState = {
 };
 
 function reducer(state, action) {
-  /** 批量完成后的统一落点：写综合摘要 + 跳地图综合页 + 清空队列状态 */
-  const completeBatch = (summary) => ({
-    ...state,
-    batchSummary: summary,
-    screen: 'map',
-    tab: 'map',
-    batchMode: false,
-    batchQueue: [],
-    batchIndex: 0,
-    batchResults: [],
-    screenStack: [],
-  });
+  try {
+    /** 批量完成后的统一落点：写综合摘要 + 跳地图综合页 + 清空队列状态 */
+    const completeBatch = (summary) => ({
+      ...state,
+      batchSummary: summary,
+      screen: 'map',
+      tab: 'map',
+      batchMode: false,
+      batchQueue: [],
+      batchIndex: 0,
+      batchResults: [],
+      screenStack: [],
+    });
 
-  switch (action.type) {
+    switch (action.type) {
     case 'GO':
       // 进入子页面（结果详情等），记录返回栈
       return { ...state, screenStack: [...state.screenStack, state.screen], screen: action.screen };
@@ -118,19 +121,15 @@ function reducer(state, action) {
         screenStack: [],
       };
 
-    case 'BATCH_PROGRESS': {
-      // 逐项分析完成：按 index 存入结果、batchIndex + 1；
-      // 全部完成（有结果数量 ≥ 初始队列长度）时构建综合摘要并跳地图
-      const results = state.batchResults.slice();
-      results[action.index] = action.result;
-      const next = { ...state, batchResults: results, batchIndex: state.batchIndex + 1 };
-      const total = state.batchQueue.length;
-      if (total > 0 && results.filter(Boolean).length >= total) {
-        const summary = aggregateAnalyses(results.filter(Boolean));
-        return completeBatch(summary);
+    case 'BATCH_PROGRESS':
+      // 逐项分析完成：按 index 存入结果、batchIndex + 1。
+      // 聚合已移出 reducer——全部完成后的跳转由 AnalyzingScreen 先聚合再 dispatch
+      // COMPLETE_BATCH；reducer 只做纯状态存取（聚合/跳转逻辑不再放这里，防 dispatch 崩溃白屏）
+      {
+        const results = state.batchResults.slice();
+        results[action.index] = action.result;
+        return { ...state, batchResults: results, batchIndex: state.batchIndex + 1 };
       }
-      return next;
-    }
 
     case 'COMPLETE_BATCH':
       // 直接以综合摘要跳地图（录音多段 / 已在外部算好摘要的场景复用）
@@ -190,6 +189,11 @@ function reducer(state, action) {
 
     default:
       return state;
+    }
+  } catch (err) {
+    // 守卫：reducer 内任何意外都不得上抛——dispatch 抛错会导致 React 卸载整棵组件树 → 白屏。
+    // 返回原 state + Toast 提示，页面保持可用
+    return { ...state, toast: state.toast || '页面状态异常，请重试' };
   }
 }
 

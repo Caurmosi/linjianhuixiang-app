@@ -276,3 +276,115 @@ test('边界: 缺失字段的残缺 analysis 不崩（守卫）', () => {
   assert.ok(Array.isArray(s.indices));
   assert.equal(s.heatmap.length, 4);
 });
+
+// ============================================================
+// 批量导入白屏修复：聚合异常输入守卫（缺字段 / 非数组 / 空 → 安全 summary，绝不抛错）
+// ============================================================
+
+test('守卫: 非对象项（字符串/数字/数组/null）一律跳过，不影响其余项聚合', () => {
+  const junk = [42, 'str', [1, 2], null, undefined, true];
+  assert.doesNotThrow(() => aggregateAnalyses(junk));
+  const s = aggregateAnalyses([42, null, a1, undefined, 'x', [1, 2]]);
+  assert.equal(s.speciesCount, 5, '只有 a1 参与聚合');
+  assert.equal(s.recording, '本区域 1 段录音综合');
+  assert.equal(s.durationSec, 30);
+});
+
+test('守卫: species 字段非数组 / 项为 null / 项缺 name → 不崩（缺省按空清单）', () => {
+  assert.doesNotThrow(() => aggregateAnalyses([{ ...a1, species: '不是数组' }]));
+  assert.equal(aggregateAnalyses([{ ...a1, species: '不是数组' }]).species.length, 0);
+  assert.equal(aggregateAnalyses([{ ...a1, species: [null, undefined, { latin: 'x' }, a1.species[0]] }]).speciesCount, 1, '缺 name 项跳过');
+  assert.equal(aggregateAnalyses([{ ...a1, species: null }]).species.length, 0);
+});
+
+test('守卫: indices 非数组 / 项为 null / pct 缺失 → 不崩（pct 回退 0，杜绝 toFixed undefined）', () => {
+  // 真实崩溃点回归：idx.pct 缺失时旧实现 avgPct 为 undefined → avgPct.toFixed(1) 抛错
+  const badIdx = [{ key: 'ACI', name: '声学复杂度', display: undefined, desc: 'x' }];
+  assert.doesNotThrow(() => aggregateAnalyses([{ ...a1, indices: badIdx }]));
+  const s1 = aggregateAnalyses([{ ...a1, indices: badIdx }]);
+  assert.equal(s1.indices.length, 1);
+  assert.equal(typeof s1.indices[0].pct, 'number', 'pct 缺失时回退 0');
+  assert.equal(s1.indices[0].display, '0');
+  // indices 非数组 / 项为 null
+  assert.doesNotThrow(() => aggregateAnalyses([{ ...a1, indices: 'x' }]));
+  assert.equal(aggregateAnalyses([{ ...a1, indices: 'x' }]).indices.length, 0);
+  assert.doesNotThrow(() => aggregateAnalyses([{ ...a1, indices: [null, { key: 'ADI' }] }]));
+  assert.ok(Array.isArray(aggregateAnalyses([{ ...a1, indices: [null, { key: 'ADI' }] }]).indices));
+});
+
+test('守卫: livability 缺失 / null / 字符串 / 数组 → 按 0 值平均，不崩', () => {
+  for (const lv of [undefined, null, 'stressed', [1, 2], 42, { score: 'abc' }]) {
+    const s = aggregateAnalyses([{ ...a1, livability: lv }]);
+    assert.equal(typeof s.livability.score, 'number', `score 应为 number: ${JSON.stringify(lv)}`);
+    assert.equal(typeof s.livability.noise, 'number');
+    assert.equal(typeof s.livability.bio, 'number');
+    assert.equal(typeof s.livability.sound, 'number');
+  }
+  const s = aggregateAnalyses([{ ...a1, livability: null }]);
+  assert.equal(s.livability.score, 0, 'livability 缺失按 0 值');
+  assert.ok(s.livability.grade && s.livability.gradeEn, '等级文案仍存在');
+});
+
+test('守卫: heatmap 非数组 / 行非数组 / 格值异常 → 返回 4×12 安全矩阵，不崩', () => {
+  const s1 = aggregateAnalyses([{ ...a1, heatmap: null }]);
+  assert.equal(s1.heatmap.length, 4);
+  assert.equal(s1.heatmap[0].length, 12);
+  assert.equal(s1.heatmap[0][0], 0);
+  const s2 = aggregateAnalyses([{ ...a1, heatmap: [[1, 'x', null, {}], null, 'bad', undefined] }]);
+  assert.equal(s2.heatmap.length, 4);
+  assert.equal(s2.heatmap[0].length, 12);
+  for (const row of s2.heatmap) {
+    for (const v of row) assert.ok(typeof v === 'number', `热力值应为 number: ${v}`);
+  }
+});
+
+test('守卫: waveform 非数组 / null → 不崩，摘要 waveform 保持数组', () => {
+  for (const wf of [null, undefined, 'wave', 42, {}]) {
+    const s = aggregateAnalyses([{ ...a1, waveform: wf }]);
+    assert.ok(Array.isArray(s.waveform), `waveform 应为数组: ${JSON.stringify(wf)}`);
+  }
+});
+
+test('守卫: durationSec 非数字 / NaN / 对象 → 按 0 计，不崩', () => {
+  const s = aggregateAnalyses([{ ...a1, durationSec: 'abc' }, { ...a2, durationSec: null }, { ...a1, durationSec: NaN }]);
+  assert.equal(s.durationSec, 0, '全部非法时长按 0');
+  assert.doesNotThrow(() => aggregateAnalyses([{ ...a1, durationSec: {} }, a1]));
+  assert.equal(aggregateAnalyses([{ ...a1, durationSec: {} }, a1]).durationSec, 30, '对象时长按 0');
+});
+
+test('守卫: segmentPoints / mapPoints 字段异常不参与聚合，不崩', () => {
+  const s = aggregateAnalyses([{ ...a1, segmentPoints: 'x', mapPoints: null }]);
+  assert.ok(Array.isArray(s.mapPoints), '聚合输出 mapPoints 始终为数组');
+  assert.ok(Array.isArray(s.segments));
+  assert.doesNotThrow(() => aggregateAnalyses([{ ...a1, segmentPoints: [null], mapPoints: [{ bad: true }] }]));
+});
+
+test('守卫: 混合「异常项 + 正常项」时正常项仍被正确聚合', () => {
+  const s = aggregateAnalyses([null, 'junk', { recording: '坏.wav', species: 'x', livability: null }, a1, a2]);
+  assert.equal(s.speciesCount, 5, '非对象项跳过，a1+a2 正常聚合');
+  assert.equal(s.durationSec, 75, '(30+45)，坏项无 durationSec 按 0');
+  assert.equal(s.recording, '本区域 3 段录音综合', '对象项（即便字段残缺）参与计数，字符串/null 项被过滤');
+  assert.equal(s.mapPoints.length, 3);
+});
+
+test('守卫: 空输入返回完整安全 summary（全字段存在，可被地图综合页直接渲染）', () => {
+  for (const input of [[], null, undefined]) {
+    const s = aggregateAnalyses(input);
+    assert.ok(s, '不应抛错');
+    assert.equal(s.speciesCount, 0);
+    assert.deepEqual(s.species, []);
+    assert.deepEqual(s.indices, []);
+    assert.deepEqual(s.mapPoints, []);
+    assert.deepEqual(s.segments, []);
+    assert.deepEqual(s.waveform, []);
+    assert.equal(s.map, null);
+    assert.equal(s.durationSec, 0);
+    assert.equal(typeof s.livability.score, 'number');
+    assert.equal(s.heatmap.length, 4);
+    assert.equal(s.heatmap[0].length, 12);
+    // 地图综合页消费的关键字段齐全
+    for (const key of ['recording', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'segments', 'map', 'waveform', 'speciesCount', 'durationSec']) {
+      assert.ok(key in s, `安全摘要缺少字段 ${key}`);
+    }
+  }
+});

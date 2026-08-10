@@ -91,7 +91,9 @@ function averageIndices(analyses) {
         return same && typeof same.pct === 'number' ? same.pct : null;
       })
       .filter((v) => v != null);
-    const avgPct = pcts.length > 0 ? pcts.reduce((x, y) => x + y, 0) / pcts.length : idx.pct;
+    // 兜底：pcts 为空且 idx.pct 缺失 / 非数字时回退 0，杜绝 toFixed 对 undefined 抛错
+    const fallback = Number.isFinite(Number(idx && idx.pct)) ? Number(idx.pct) : 0;
+    const avgPct = pcts.length > 0 ? pcts.reduce((x, y) => x + y, 0) / pcts.length : fallback;
     return {
       key: idx.key,
       name: idx.name,
@@ -158,67 +160,101 @@ function buildSegments(analyses) {
   });
 }
 
-/**
- * 多录音聚合（D）
- * @param {Array<object>} analyses 多个完整 analysis（buildAnalysis 输出形态）
- * @returns {object} 综合摘要；空数组返回一份「零值」摘要（守卫，不抛错）
- */
-export function aggregateAnalyses(analyses) {
-  const list = Array.isArray(analyses) ? analyses.filter(Boolean) : [];
-  const n = list.length;
-  const summary = {
+/** 安全读取 analysis.livability（判对象；缺失/非对象返回 {}，不抛） */
+function livabilityOf(a) {
+  return a && a.livability && typeof a.livability === 'object' && !Array.isArray(a.livability)
+    ? a.livability
+    : {};
+}
+
+/** 最小安全摘要（空输入 / 聚合过程异常时返回，绝不抛错、保证地图综合页可渲染） */
+function emptySummary(n) {
+  return {
     recording: `本区域 ${n} 段录音综合`,
     speciesCount: 0,
     species: [],
     indices: [],
     livability: { score: 0, grade: '受压', gradeEn: 'Stressed', noise: 0, bio: 0, sound: 0 },
-    heatmap: averageHeatmap(list),
+    heatmap: Array.from({ length: 4 }, () => Array(12).fill(0)),
     mapPoints: [],
     segments: [],
     map: null,
     waveform: [],
     durationSec: 0,
   };
-  if (n === 0) return summary;
+}
 
-  // 物种：合并去重，按出现次数降序
-  const species = mergeSpecies(list);
-  summary.species = species;
-  summary.speciesCount = species.length;
+/**
+ * 多录音聚合（D）
+ * @param {Array<object>} analyses 多个完整 analysis（buildAnalysis 输出形态）
+ * @returns {object} 综合摘要；空数组 / 非数组 / 单项异常 / 字段残缺时均返回安全摘要，绝不抛错。
+ *
+ * 守卫策略（加固点）：
+ *  - 入口先过滤「非对象 / 数组」项（单项异常 → 跳过该项，不中断聚合）；
+ *  - species/indices/livability/heatmap/waveform/segmentPoints/mapPoints/durationSec
+ *    访问前一律 Array.isArray / typeof 判空，缺失字段按零值计；
+ *  - 最外层 try/catch：任何意外（含新增字段访问）都不上抛，回退最小安全摘要。
+ * 输出结构 / 数据契约与既有 batchSummary 完全一致。
+ */
+export function aggregateAnalyses(analyses) {
+  // 单项异常过滤：非对象（null/undefined/字符串/数字/数组）一律跳过
+  const list = Array.isArray(analyses)
+    ? analyses.filter((a) => a && typeof a === 'object' && !Array.isArray(a))
+    : [];
+  const n = list.length;
+  if (n === 0) return emptySummary(n);
 
-  // 宜居度：各段平均，grade 由平均 score 推导
-  const score = Math.round(mean(list.map((a) => a && a.livability && a.livability.score)));
-  const noise = Math.round(mean(list.map((a) => a && a.livability && a.livability.noise)));
-  const bio = Math.round(mean(list.map((a) => a && a.livability && a.livability.bio)));
-  const sound = Math.round(mean(list.map((a) => a && a.livability && a.livability.sound)));
-  const g = gradeOf(score);
-  summary.livability = { score, noise, bio, sound, grade: g.zh, gradeEn: g.en };
+  try {
+    const summary = emptySummary(n);
 
-  // 声学指数平均
-  summary.indices = averageIndices(list);
+    // 物种：合并去重，按出现次数降序
+    const species = mergeSpecies(list);
+    summary.species = species;
+    summary.speciesCount = species.length;
 
-  // 空间样点：每段一个
-  summary.mapPoints = buildMapPoints(list);
+    // 宜居度：各段平均，grade 由平均 score 推导
+    const score = Math.round(mean(list.map((a) => livabilityOf(a).score)));
+    const noise = Math.round(mean(list.map((a) => livabilityOf(a).noise)));
+    const bio = Math.round(mean(list.map((a) => livabilityOf(a).bio)));
+    const sound = Math.round(mean(list.map((a) => livabilityOf(a).sound)));
+    const g = gradeOf(score);
+    summary.livability = { score, noise, bio, sound, grade: g.zh, gradeEn: g.en };
 
-  // 各段录音信息（名称/宜居度/定位状态），供 MapPicker 手动选点列表
-  summary.segments = buildSegments(list);
+    // 声学指数平均
+    summary.indices = averageIndices(list);
 
-  // 真实地图：各段 GPS 坐标并入 summary.map.points（无坐标 → map 为 null，地图页引导手动选点）
-  const geoPoints = buildMapPointsGeo(list);
-  summary.map =
-    geoPoints.length > 0
-      ? { center: [geoPoints[0].lng, geoPoints[0].lat], zoom: 13, bounds: null, points: geoPoints }
-      : null;
+    // 空间样点：每段一个
+    summary.mapPoints = buildMapPoints(list);
 
-  // 波形：取最长录音的波形（重合度取舍说明：多段拼接在视觉上等同加权平均，
-  // 直接取时长最长一段作代表，避免 N 段不同长度波形混排失真）
-  const longest = list
-    .map((a, i) => ({ a, i, len: Array.isArray(a && a.waveform) ? a.waveform.length : 0 }))
-    .sort((x, y) => y.len - x.len)[0];
-  if (longest && longest.len > 0) summary.waveform = longest.a.waveform;
+    // 各段录音信息（名称/宜居度/定位状态），供 MapPicker 手动选点列表
+    summary.segments = buildSegments(list);
 
-  // 时长：各段之和
-  summary.durationSec = Math.round(list.reduce((sum, a) => sum + (Number(a && a.durationSec) || 0), 0));
+    // 真实地图：各段 GPS 坐标并入 summary.map.points（无坐标 → map 为 null，地图页引导手动选点）
+    const geoPoints = buildMapPointsGeo(list);
+    summary.map =
+      geoPoints.length > 0
+        ? { center: [geoPoints[0].lng, geoPoints[0].lat], zoom: 13, bounds: null, points: geoPoints }
+        : null;
 
-  return summary;
+    // 热力图：逐格平均（缺失 → 零矩阵）
+    summary.heatmap = averageHeatmap(list);
+
+    // 波形：取最长录音的波形（重合度取舍说明：多段拼接在视觉上等同加权平均，
+    // 直接取时长最长一段作代表，避免 N 段不同长度波形混排失真）
+    const longest = list
+      .map((a, i) => ({ a, i, len: Array.isArray(a && a.waveform) ? a.waveform.length : 0 }))
+      .sort((x, y) => y.len - x.len)[0];
+    if (longest && longest.len > 0 && Array.isArray(longest.a.waveform)) {
+      summary.waveform = longest.a.waveform;
+    }
+
+    // 时长：各段之和（缺 durationSec / 非数字按 0 计）
+    summary.durationSec = Math.round(list.reduce((sum, a) => sum + (Number(a && a.durationSec) || 0), 0));
+
+    return summary;
+  } catch (err) {
+    // 聚合过程任何意外都不上抛（reducer / dispatch 抛错会卸载 React 树 → 白屏），
+    // 回退最小安全摘要，保地图综合页可渲染
+    return emptySummary(n);
+  }
 }

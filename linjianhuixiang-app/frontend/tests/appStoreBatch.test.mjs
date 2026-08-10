@@ -2,9 +2,10 @@
  * appStoreBatch.test.mjs
  * appStore 批量分析 action（B）行为测试：
  *  - START_BATCH：初始化队列 / batchMode / 进入 analyzing；
- *  - BATCH_PROGRESS：按 index 存结果、batchIndex 递增，未完成保持批量态；
- *  - BATCH_PROGRESS 全部完成 → 聚合摘要 → 跳地图综合页（screen/tab=map、batchMode=false、队列清空）；
- *  - COMPLETE_BATCH：直接携带摘要跳地图（录音多段复用路径）；
+ *  - BATCH_PROGRESS：按 index 存结果、batchIndex 递增，保持批量态（不自动跳转）；
+ *  - 聚合已移出 reducer：全部完成后由 AnalyzingScreen 先 aggregateAnalyses 再 dispatch
+ *    COMPLETE_BATCH 跳地图综合页（reducer 内任何聚合调用都被移除——防 dispatch 崩溃白屏）；
+ *  - COMPLETE_BATCH：直接携带摘要跳地图（录音多段/批量聚合完成后的统一落点）；
  *  - CLEAR_BATCH：清除综合摘要与队列。
  * 运行：node --test tests/appStoreBatch.test.mjs
  */
@@ -60,7 +61,7 @@ test('BATCH_PROGRESS: 按 index 存结果、batchIndex 递增，未完成保持�
   assert.equal(next.batchSummary, null);
 });
 
-test('BATCH_PROGRESS: 全部完成后聚合摘要并跳地图综合页', () => {
+test('BATCH_PROGRESS: 全部完成后不自动聚合跳转（聚合在 AnalyzingScreen 侧），保持批量态', () => {
   const items = [{ name: 'a.wav' }, { name: 'b.wav' }];
   const s1 = reducer(initialState, { type: 'START_BATCH', items });
   const r0 = buildAnalysis('a.wav', { speciesCount: 3, livability: { score: 72, noise: 25, bio: 80, sound: 68 } });
@@ -68,19 +69,24 @@ test('BATCH_PROGRESS: 全部完成后聚合摘要并跳地图综合页', () => {
   const s2 = reducer(s1, { type: 'BATCH_PROGRESS', index: 0, result: r0 });
   const done = reducer(s2, { type: 'BATCH_PROGRESS', index: 1, result: r1 });
 
-  assert.equal(done.screen, 'map');
-  assert.equal(done.tab, 'map');
-  assert.equal(done.batchMode, false);
-  assert.deepEqual(arr(done.batchQueue), []);
-  assert.equal(done.batchIndex, 0);
-  assert.deepEqual(arr(done.batchResults), []);
-  assert.deepEqual(arr(done.screenStack), []);
+  // 全部结果已入槽、batchIndex 推到队列末尾——但不再自动聚合/跳转
+  assert.equal(done.batchResults.length, 2);
+  assert.equal(done.batchIndex, 2);
+  assert.equal(done.batchMode, true, '聚合已移出 reducer：全部完成后保持批量态，等待 AnalyzingScreen dispatch COMPLETE_BATCH');
+  assert.equal(done.screen, 'analyzing', '不自动跳地图');
+  assert.equal(done.batchSummary, null);
 
-  // 摘要由聚合函数生成：物种合并去重、宜居度平均、标题含段数
-  assert.equal(done.batchSummary.recording, '本区域 2 段录音综合');
-  assert.equal(done.batchSummary.speciesCount, 4, 'a(3 种)∪b(4 种)=4 种');
-  assert.equal(done.batchSummary.livability.score, 64, '(72+55)/2≈64');
-  assert.equal(done.batchSummary.mapPoints.length, 2);
+  // 聚合后的摘要由 AnalyzingScreen 计算并随 COMPLETE_BATCH 落库 → 跳地图综合页
+  const summary = { recording: '本区域 2 段录音综合', speciesCount: 4, livability: { score: 64 }, mapPoints: [{}, {}] };
+  const landed = reducer(done, { type: 'COMPLETE_BATCH', summary });
+  assert.equal(landed.screen, 'map');
+  assert.equal(landed.tab, 'map');
+  assert.equal(landed.batchMode, false);
+  assert.deepEqual(arr(landed.batchQueue), []);
+  assert.equal(landed.batchIndex, 0);
+  assert.deepEqual(arr(landed.batchResults), []);
+  assert.deepEqual(arr(landed.screenStack), []);
+  assert.equal(landed.batchSummary, summary);
 });
 
 test('BATCH_PROGRESS: 乱序/跳跃 index 存入对应槽位（按 index 落位）', () => {
