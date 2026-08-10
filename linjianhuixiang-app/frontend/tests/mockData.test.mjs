@@ -257,11 +257,12 @@ test('buildAnalysis: overrides 可覆盖 waveform/segmentPoints，未覆盖时�
   assert.equal(plain.segmentPoints, SEGMENT_POINTS);
 });
 
-test('analysisForHistory: 每条历史记录都能正确还原为分析结果', () => {
+test('analysisForHistory: 每条历史记录都能正确还原为分析结果（speciesCount 规范化为清单条数）', () => {
   for (const item of HISTORY) {
     const a = analysisForHistory(item);
     assert.equal(a.recording, item.name);
-    assert.equal(a.speciesCount, item.species);
+    // 回放 speciesCount 恒等于快照物种清单条数（西郊森林公园快照 12 但清单 9 → 规范化为 9）
+    assert.equal(a.speciesCount, item.analysis.species.length, `${item.name} speciesCount 应等于快照清单条数`);
     assert.equal(a.livability.score, item.score);
     assert.equal(a.livability.noise, item.noise);
     assert.equal(a.livability.bio, item.bio);
@@ -269,10 +270,25 @@ test('analysisForHistory: 每条历史记录都能正确还原为分析结果', 
   }
 });
 
-test('analysisForHistory: 优先返回 item.analysis 完整快照（同一引用）', () => {
+test('analysisForHistory: 优先返回 item.analysis 完整快照（浅拷贝返回，speciesCount 规范化）', () => {
   for (const item of HISTORY) {
-    assert.equal(analysisForHistory(item), item.analysis, `${item.name} 应直接返回快照而非重建`);
+    const snap = analysisForHistory(item);
+    assert.deepEqual(snap, { ...item.analysis, speciesCount: item.analysis.species.length }, `${item.name} 应返回规范化浅拷贝快照`);
+    assert.notEqual(snap, item.analysis, `${item.name} 不应返回同一引用（防外改污染原始快照）`);
   }
+});
+
+test('analysisForHistory: 脏快照规范化 —— speciesCount 恒等于 species.length（12 vs 9 → 9）', () => {
+  const item = HISTORY[2]; // 西郊森林公园：快照 speciesCount 12、清单 9 条
+  const snap = analysisForHistory(item);
+  assert.equal(snap.speciesCount, 9, 'speciesCount 应按 species 数组长度规范化为 9');
+  assert.equal(snap.species.length, 9);
+  assert.equal(HISTORY[2].analysis.speciesCount, 12, '原始快照保留 speciesCount 12，规范化在返回时浅拷贝完成');
+  // 自定义脏快照：species 长度 ≠ speciesCount
+  const dirty = { recording: 'dirty.wav', speciesCount: 7, species: [{ id: 1 }, { id: 2 }, { id: 3 }] };
+  const d = analysisForHistory({ analysis: dirty });
+  assert.equal(d.speciesCount, 3);
+  assert.notEqual(dirty.speciesCount, d.speciesCount, '原始脏快照不被修改');
 });
 
 test('analysisForHistory: 不同历史条目的物种清单各不相同（回放不再都是"最后一次"）', () => {

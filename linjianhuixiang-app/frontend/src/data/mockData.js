@@ -198,7 +198,11 @@ export function buildAnalysis(name, overrides = {}) {
  */
 export function analysisForHistory(item) {
   if (item && item.analysis && typeof item.analysis === 'object') {
-    return item.analysis;
+    // 浅拷贝 + 规范化：快照 speciesCount 恒等于 species 清单条数，
+    // 避免旧快照 speciesCount≠species.length 时结果页「识别鸟种」与清单不一致（如西郊森林公园 12 vs 9）。
+    const snap = { ...item.analysis };
+    if (Array.isArray(snap.species)) snap.speciesCount = snap.species.length;
+    return snap;
   }
   return buildAnalysis(item.name, {
     speciesCount: item.species,

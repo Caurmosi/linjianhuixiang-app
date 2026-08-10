@@ -39,12 +39,14 @@ class MainActivity : AppCompatActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
     // 在 onCreate 之前注册（类属性初始化时机最稳，Activity 重建不丢注册）。
-    // 仅允许选择音频文件，对应 H5 侧 <input type="file" accept="audio/*">。
-    private val openAudioFile =
-        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-            // 用户取消选择时 uri 为 null，回调 null 数组即 WebView 约定的“取消”语义；
-            // 选择成功则回调包含单个 Uri 的数组（取 file.name 的逻辑在 H5 侧完成）。
-            filePathCallback?.onReceiveValue(uri?.let { arrayOf(it) })
+    // 仅允许选择音频文件，对应 H5 侧 <input type="file" accept="audio/*" multiple>。
+    // 使用 GetMultipleContents（多选契约）：即使 H5 input 已加 multiple，
+    // GetContent 仍只返回 1 个文件；多选后 ≥2 个由 H5 侧走 START_BATCH 批量，1 个走结果页。
+    private val openAudioFiles =
+        registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri>? ->
+            // 用户取消选择时 uris 为 null，回调 null 即 WebView 约定的“取消”语义；
+            // 选择成功则回调全部 Uri 数组（ValueCallback<Array<Uri>>，取 file.name 的逻辑在 H5 侧完成）。
+            filePathCallback?.onReceiveValue(uris?.toTypedArray())
             filePathCallback = null
         }
 
@@ -140,7 +142,7 @@ class MainActivity : AppCompatActivity() {
                 fileChooserParams: FileChooserParams?
             ): Boolean {
                 this@MainActivity.filePathCallback = filePathCallback
-                openAudioFile.launch("audio/*") // 只选音频
+                openAudioFiles.launch("audio/*") // 只选音频（多选）
                 return true
             }
 

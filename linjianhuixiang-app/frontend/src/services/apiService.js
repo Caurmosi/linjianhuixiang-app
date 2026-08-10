@@ -202,7 +202,11 @@ export async function buildAnalysis(name, overrides = {}) {
  *  - 旧记录无快照时降级组合端点 + 历史条目覆盖。 */
 export async function analysisForHistory(item) {
   if (item && item.analysis && typeof item.analysis === 'object') {
-    return item.analysis;
+    // 与 mockData.analysisForHistory 一致：浅拷贝 + 规范化 speciesCount，
+    // 保证回放后结果页「识别鸟种」恒等于物种清单条数（真实后端快照本就自洽，此处为统一兜底）。
+    const snap = { ...item.analysis };
+    if (Array.isArray(snap.species)) snap.speciesCount = snap.species.length;
+    return snap;
   }
   const parts = await fetchBaselineParts();
   const g = gradeOf(item.score);

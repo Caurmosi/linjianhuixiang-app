@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as mockData from '../src/data/mockData.js';
 import * as repository from '../src/data/repository.js';
+import * as apiService from '../src/services/apiService.js';
 import { DATA_SOURCE, dataSource, getDataSource, isMock, isMockMode, resolveDataSource } from '../src/config/dataConfig.js';
 
 const FRONTEND_ROOT = path.join(fileURLToPath(new URL('..', import.meta.url)));
@@ -55,6 +56,17 @@ test('repository: 函数接口与 mockData 语义一致（深比较）', () => {
   assert.deepEqual(repository.gradeOf(50), mockData.gradeOf(50));
   assert.deepEqual(repository.gradeOf(49), mockData.gradeOf(49));
   assert.equal(repository.livabilityDesc({ livability: { score: 82, noise: 22 } }), mockData.livabilityDesc({ livability: { score: 82, noise: 22 } }));
+});
+
+test('apiService.analysisForHistory: 快照路径同样规范化 speciesCount（真实模式兜底，不触网）', async () => {
+  // 快照存在时直接浅拷贝返回，不发起后端请求；speciesCount 按 species 长度规范化
+  const snap = await apiService.analysisForHistory({ analysis: { recording: 'dirty.wav', speciesCount: 12, species: [{ id: 1 }, { id: 2 }] } });
+  assert.equal(snap.speciesCount, 2, 'apiService 快照 speciesCount 应规范化为 species.length');
+  assert.equal(snap.species.length, 2);
+  // mock 侧历史脏快照经 apiService 后也应自洽（西郊森林公园 12 → 9）
+  const historySnap = await apiService.analysisForHistory(mockData.HISTORY[2]);
+  assert.equal(historySnap.speciesCount, historySnap.species.length);
+  assert.equal(historySnap.speciesCount, 9);
 });
 
 test('dataConfig: 默认数据源为 mock（Node 环境未设置 VITE_USE_MOCK）', () => {

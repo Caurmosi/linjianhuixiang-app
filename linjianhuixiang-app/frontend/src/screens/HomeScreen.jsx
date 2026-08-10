@@ -123,16 +123,34 @@ export default function HomeScreen() {
         </Button>
       </div>
 
-      {/* 次级行：导入环境录音（多选） + 历史记录 */}
-      <div className="row2">
-        <Button variant="ghost" icon={<IconUpload size={20} />} onClick={onPickFile}>
-          导入环境录音
+      {/* 导入环境录音 —— 横向扁卡片（点击任意处或右侧按钮均选音频，支持多选批量） */}
+      <div className="import-card-row" onClick={onPickFile} role="button" tabIndex={0}>
+        <div className="up">
+          <IconUpload size={26} />
+        </div>
+        <div className="txt">
+          <h3>导入环境录音</h3>
+          <p>支持 .wav / .mp3，单段或批量导入</p>
+        </div>
+        <Button
+          variant="ghost"
+          icon={<IconUpload size={18} />}
+          onClick={(e) => {
+            e.stopPropagation(); // 避免冒泡到卡片重复触发 onPickFile
+            onPickFile();
+          }}
+        >
+          选择音频
         </Button>
+      </div>
+      <input ref={fileRef} type="file" accept="audio/*" multiple className="hidden" onChange={onFileChange} />
+
+      {/* 历史记录 —— 次级按钮行 */}
+      <div className="mb-3.5">
         <Button variant="ghost" icon={<IconClock size={20} />} onClick={onHistory}>
           历史记录
         </Button>
       </div>
-      <input ref={fileRef} type="file" accept="audio/*" multiple className="hidden" onChange={onFileChange} />
 
       {/* 一键演示（内置样例）：仅演示模式渲染（真实识别模式隐藏） */}
       {mockMode ? (

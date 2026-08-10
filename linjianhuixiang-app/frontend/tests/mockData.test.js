@@ -233,10 +233,27 @@ describe('analysisForHistory 历史回放构建', () => {
     assert.equal(a.livability.sound, item.sound);
   });
 
-  test('优先返回 item.analysis 完整快照（同一引用，不再重建默认数据）', () => {
+  test('优先返回 item.analysis 完整快照（浅拷贝，speciesCount 规范化为物种清单条数）', () => {
     for (const item of HISTORY) {
-      assert.equal(analysisForHistory(item), item.analysis, `${item.name} 应直接返回快照`);
+      const snap = analysisForHistory(item);
+      // 返回浅拷贝而非同一引用，且 speciesCount 恒等于 species 数组长度
+      assert.deepEqual(snap, { ...item.analysis, speciesCount: item.analysis.species.length }, `${item.name} 应返回规范化浅拷贝快照`);
+      assert.notEqual(snap, item.analysis, `${item.name} 不应返回同一引用（防外改污染原始快照）`);
     }
+  });
+
+  test('快照规范化：speciesCount≠species.length 的脏快照 → 返回 speciesCount===species.length', () => {
+    const dirty = { recording: '脏快照.wav', speciesCount: 12, species: [{ id: 1 }, { id: 2 }] };
+    const snap = analysisForHistory({ analysis: dirty });
+    assert.equal(snap.speciesCount, 2, 'speciesCount 应按 species 数组长度规范化');
+    assert.equal(snap.species.length, 2);
+    assert.notEqual(dirty.speciesCount, snap.speciesCount, '原始快照不被修改（浅拷贝兜底）');
+  });
+
+  test('西郊森林公园（物种清单 9 条、快照 speciesCount 12）回放后恒等于清单条数', () => {
+    const a = analysisForHistory(HISTORY[2]);
+    assert.equal(a.speciesCount, a.species.length, '识别鸟种数应等于物种清单条数');
+    assert.equal(a.species.length, 9, '西郊森林公园 species 清单共 9 条');
   });
 });
 

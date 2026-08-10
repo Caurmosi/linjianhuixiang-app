@@ -480,6 +480,57 @@ body {
   color: var(--ink-soft);
   margin-bottom: 16px;
 }
+/* 导入环境录音 —— 横向扁卡片（与 record-card 协调但更扁，不占整屏高度） */
+.import-card-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(155deg, #fff, #f3f8f2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease);
+}
+.import-card-row:active {
+  transform: scale(0.99);
+}
+.import-card-row .up {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--forest-100);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.import-card-row .up svg {
+  width: 24px;
+  height: 24px;
+  stroke: var(--forest-600);
+}
+.import-card-row .txt {
+  min-width: 0;
+  flex: 1;
+}
+.import-card-row .txt h3 {
+  font-size: 15px;
+  font-weight: 700;
+}
+.import-card-row .txt p {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+.import-card-row .btn {
+  width: auto;
+  flex: none;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: 12px;
+}
 .recent {
   display: flex;
   gap: 12px;
