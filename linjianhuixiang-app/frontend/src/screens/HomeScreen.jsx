@@ -1,6 +1,6 @@
 /**
  * HomeScreen.jsx
- * 首页：导入音频 / 一键演示 / 实时录音(mock) / 历史记录 / 最近分析
+ * 首页：导入音频 / 一键演示 / 实时录音(真实识别) / 历史记录 / 最近分析
  */
 import { useRef } from 'react';
 import { useApp } from '../store/appStore.jsx';
@@ -60,21 +60,15 @@ export default function HomeScreen() {
   };
 
   const onRecord = async () => {
-    // 实时录音：真机走 MediaRecorder 真实采集 + 原生桥保存；分析仍为 mock
+    // 实时录音：真机走 MediaRecorder 真实采集 + 原生桥保存；录音 File 随 START_ANALYSIS 走真实识别链路
     const fallback = () => {
-      dispatch({
-        type: 'START_ANALYSIS',
-        recording: '实时录音_演示.wav',
-        overrides: { speciesCount: 7, livability: { score: 62, noise: 41, bio: 70, sound: 55 } },
-      });
+      // 无音频数据的演示分析（AnalyzingScreen 无 audioFile 时走 mock 组合）
+      dispatch({ type: 'START_ANALYSIS', recording: '实时录音_演示.wav' });
     };
-    // 完成分析（mock overrides 保持现有 62 分那套）
-    const startAnalysis = (name) => {
-      dispatch({
-        type: 'START_ANALYSIS',
-        recording: name,
-        overrides: { speciesCount: 7, livability: { score: 62, noise: 41, bio: 70, sound: 55 } },
-      });
+    // 完成分析：有录音 File 时传入 audioFile 供 AnalyzingScreen 真实上传识别；
+    // 无音频时省略 audioFile，AnalyzingScreen 自动走 mock 组合 / 失败兜底演示数据
+    const startAnalysis = (name, audioFile) => {
+      dispatch({ type: 'START_ANALYSIS', recording: name, audioFile });
     };
     const ts = () => String(Date.now());
     const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
@@ -114,13 +108,16 @@ export default function HomeScreen() {
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const mimeType = recorder.mimeType || 'audio/webm';
+        const name = '实时录音_' + ts() + '.webm';
         const blob = chunks.length > 0 ? new Blob(chunks, { type: mimeType }) : null;
-        if (blob && bridge && typeof bridge.saveAudio === 'function') {
+        // 合并录音数据 → File，随 START_ANALYSIS 传入 AnalyzingScreen 走真实上传识别
+        const audioFile = blob ? new File([blob], name, { type: mimeType }) : null;
+        if (audioFile && bridge && typeof bridge.saveAudio === 'function') {
           // 3) 转 base64 → 原生桥保存到本地
           const reader = new FileReader();
           const finish = (saved) => {
             dispatch({ type: 'TOAST', message: saved ? '录音已保存到手机' : '录音完成，开始分析' });
-            startAnalysis('实时录音_' + ts() + '.webm');
+            startAnalysis(name, audioFile);
           };
           reader.onload = () => {
             let saved = false;
@@ -134,16 +131,16 @@ export default function HomeScreen() {
           reader.onerror = () => finish(false);
           reader.readAsDataURL(blob);
         } else {
-          // 5) 无桥 / 无数据：降级为现有 mock 分析流程
+          // 5) 无桥 / 无数据：降级为不带 audioFile 的 START_ANALYSIS，AnalyzingScreen 走 mock 组合
           dispatch({ type: 'TOAST', message: '录音完成，开始分析' });
-          startAnalysis('实时录音_3s.wav');
+          startAnalysis(name, audioFile);
         }
       };
       recorder.start();
       window.setTimeout(() => {
         if (recorder.state !== 'inactive') recorder.stop();
-      }, 3000);
-      dispatch({ type: 'TOAST', message: '正在录音 3 秒…' });
+      }, 10000);
+      dispatch({ type: 'TOAST', message: '正在录音 10 秒…' });
     } catch (err) {
       dispatch({ type: 'TOAST', message: '无法获取麦克风权限，已回退到演示分析' });
       fallback();
