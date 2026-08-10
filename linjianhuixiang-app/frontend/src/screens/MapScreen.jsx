@@ -1,9 +1,9 @@
 /**
  * MapScreen.jsx
  * 声景地图：
- *  - 有 batchSummary（多录音聚合综合）→ 综合视图：综合宜居度大卡（Ring）+ 物种清单（按出现次数）
- *    + 时间热力图（聚合平均）+ 空间分布（mapPoints 每段一个点），并提供「保存地区记录」
- *    （命名输入 → saveRegion → 同名自动归组）+「清除综合，返回首页」；
+ *  - 有 batchSummary（多录音聚合综合）→ 综合视图：复用 <RegionSummary summary={batchSummary} />
+ *    渲染完整综合数据（宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 声景分布 + 波形），
+ *    并提供「保存地区记录」（命名输入 → saveRegion → 同名自动归组）+「清除综合，返回首页」；
  *  - 无 batchSummary → 原有单点分析视图：分段切换「时间热力图 / 空间分布」，多绿地样点对比；
  *  - 两种视图下均展示「地区记录」区块：按名称分组、组内按时间升序，点击进入地区详情（趋势对比）。
  */
@@ -12,10 +12,10 @@ import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Button from '../components/ui/Button';
 import Chip from '../components/ui/Chip';
-import Ring from '../components/Ring';
+import RegionSummary from '../components/RegionSummary';
 import HeatmapChart from '../components/charts/HeatmapChart';
 import MapChart from '../components/charts/MapChart';
-import { getGreenSpaces, getRegions, gradeOf, livabilityDesc, deleteRegion, saveRegion } from '../data/repository';
+import { getGreenSpaces, getRegions, deleteRegion, saveRegion } from '../data/repository';
 import { formatISODate } from '../utils/dates';
 import { humanizeBackendError } from '../utils/errorText';
 import { IconChevronRight, IconTrash } from '../components/icons';
@@ -195,19 +195,13 @@ export default function MapScreen() {
     );
   };
 
-  /** 综合视图：多录音聚合摘要 */
+  /** 综合视图：多录音聚合摘要（复用 RegionSummary 渲染完整综合数据） */
   if (summary) {
-    const lv = summary.livability || {};
-    const g = gradeOf(typeof lv.score === 'number' ? lv.score : 0);
-    const desc = livabilityDesc(summary);
     // 段数 = mapPoints 数量（每段一个样点）；空摘要时回退物种数 / 0
     const n =
       Array.isArray(summary.mapPoints) && summary.mapPoints.length > 0
         ? summary.mapPoints.length
         : summary.speciesCount || 0;
-    const species = Array.isArray(summary.species) ? summary.species : [];
-    const heat = Array.isArray(summary.heatmap) && summary.heatmap.length > 0 ? summary.heatmap : null;
-    const points = Array.isArray(summary.mapPoints) ? summary.mapPoints : [];
 
     const clearBatch = () => {
       dispatch({ type: 'CLEAR_BATCH' });
@@ -218,81 +212,8 @@ export default function MapScreen() {
       <div>
         <AppBar title={`本区域 ${n} 段录音综合`} onBack={() => dispatch({ type: 'BACK' })} />
 
-        {/* 综合宜居度大卡 */}
-        <div className="liv-hero">
-          <Ring value={lv.score || 0} size={128} />
-          <div className="info">
-            <b>综合鸟类宜居度</b>
-            <span className="grade">
-              {g.zh} · {g.en}
-            </span>
-            <p>{desc}</p>
-          </div>
-        </div>
-
-        {/* 物种清单（按出现次数） */}
-        <div className="eyebrow mb-2.5">物种清单 · 按出现次数</div>
-        {species.length === 0 ? (
-          <div className="py-4 text-center">
-            <p className="text-[12.5px] font-bold">未识别到鸟种</p>
-            <p className="text-[11px] text-ink-soft mt-1">可尝试降低置信度阈值后重新分析</p>
-          </div>
-        ) : (
-          species.map((s) => (
-            <div className="sum-sp" key={s.name}>
-              <span className="sum-sp-name">
-                {s.name}
-                <i>{s.latin}</i>
-              </span>
-              <Chip tone="good" className="!px-2 !py-0.5">
-                {s.count} 次
-              </Chip>
-            </div>
-          ))
-        )}
-
-        {/* 时间热力图 / 空间分布 分段切换 */}
-        <div className="seg" style={{ marginTop: 16 }}>
-          <button className={seg === 'heat' ? 'on' : ''} onClick={() => setSeg('heat')}>
-            时间热力图
-          </button>
-          <button className={seg === 'map' ? 'on' : ''} onClick={() => setSeg('map')}>
-            空间分布
-          </button>
-        </div>
-
-        {seg === 'heat' ? (
-          <div className="heat-wrap">
-            <h4>本区域 {n} 段录音 · 聚合平均</h4>
-            <div className="cap">时段 × 频段 · 各段热力逐格平均（{n} 段）</div>
-            {heat ? <HeatmapChart data={heat} /> : <div className="cap">暂无热力图数据</div>}
-            <div className="legend">
-              <span>弱</span>
-              <span className="scale" />
-              <span>强</span>
-              <span className="ml-auto">频段：低 → 高</span>
-            </div>
-          </div>
-        ) : (
-          <div className="map-wrap">
-            <h4>每段录音一个样点</h4>
-            <div className="cap">
-              {points.length} 个样点 · 按各段宜居度着色{summary.durationSec ? ` · 总时长 ${summary.durationSec}s` : ''}
-            </div>
-            {points.length > 0 ? <MapChart points={points} /> : <div className="cap">暂无样点数据</div>}
-            <div className="legend">
-              <Chip tone="good" className="!px-2 !py-0.5">
-                宜居
-              </Chip>
-              <Chip tone="mid" className="!px-2 !py-0.5">
-                一般
-              </Chip>
-              <Chip tone="bad" className="!px-2 !py-0.5">
-                受压
-              </Chip>
-            </div>
-          </div>
-        )}
+        {/* 完整综合数据：宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 声景分布 + 波形 */}
+        <RegionSummary summary={summary} />
 
         {/* 保存地区记录 */}
         <div className="mt-4">

@@ -136,13 +136,13 @@ describe('MapScreen.jsx：多录音综合视图（需求 D）', () => {
     assert.match(map, /本区域 .* 段录音综合/);
   });
 
-  test('综合视图包含：宜居度大卡 Ring + 物种清单（按出现次数）+ 聚合热力图 + mapPoints 空间分布 + 清除综合', () => {
-    assert.match(map, /综合鸟类宜居度/);
-    assert.match(map, /物种清单 · 按出现次数/);
-    assert.match(map, /聚合平均/);
-    assert.match(map, /每段录音一个样点/);
+  test('综合视图复用 RegionSummary（完整综合数据渲染已抽至公共组件）+ 保留保存/清除', () => {
+    assert.match(map, /RegionSummary/, '综合视图引用公共组件');
+    assert.match(map, /<RegionSummary summary=\{summary\}\s*\/>/, 'batchSummary 分支渲染 RegionSummary');
+    assert.match(map, /保存地区记录/, '保存按钮保留在综合视图');
     assert.match(map, /CLEAR_BATCH/);
     assert.match(map, /清除综合，返回首页/);
+    // 渲染区块（宜居度大卡/物种清单/热力图/声景分布）断言见 regionDetail.test.js
   });
 
   test('保留原单点分析视图（无 batchSummary 时照旧）', () => {

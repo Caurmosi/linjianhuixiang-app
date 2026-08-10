@@ -2,7 +2,9 @@
  * RegionScreen.jsx
  * 地区详情：展示该地区（同名归组）的所有测量记录 + 趋势折线图。
  *  - AppBar：标题 = 地区名；右侧「重命名」→ 输入新名 → renameRegion（组内全部记录同步改名）；
- *  - 记录列表：日期 / 宜居度 score / 噪声% / 鸟种数 speciesCount / 删除（二次确认）；
+ *  - 记录列表：日期 / 宜居度 score / 噪声% / 鸟种数 speciesCount / 删除（二次确认），
+ *    行标题显示 detail.recording 录音名便于识别；点击某条 → 列表上方展开该次录音的
+ *    完整综合数据（复用 <RegionSummary summary={record.detail} />）+「← 返回列表」切换；
  *  - 趋势折线图：宜居度 score 与 人为噪声 noise 随时间对比（≥2 次测量才有意义）。
  */
 import { useEffect, useState } from 'react';
@@ -11,10 +13,11 @@ import AppBar from '../components/AppBar';
 import Button from '../components/ui/Button';
 import Chip from '../components/ui/Chip';
 import LineChart from '../components/charts/LineChart';
+import RegionSummary from '../components/RegionSummary';
 import { deleteRegion, getRegions, renameRegion } from '../data/repository';
 import { formatISODate } from '../utils/dates';
 import { humanizeBackendError } from '../utils/errorText';
-import { IconTrash } from '../components/icons';
+import { IconBack, IconChevronRight, IconTrash } from '../components/icons';
 
 export default function RegionScreen() {
   const { state, dispatch } = useApp();
@@ -24,6 +27,8 @@ export default function RegionScreen() {
   const [showRename, setShowRename] = useState(false);
   const [renameInput, setRenameInput] = useState('');
   const [renaming, setRenaming] = useState(false);
+  // 当前选中查看完整综合数据的记录 id（null = 未选中，保持列表 + 趋势）
+  const [selectedId, setSelectedId] = useState(null);
 
   const loadRegions = async () => {
     try {
@@ -43,6 +48,8 @@ export default function RegionScreen() {
   const records = (state.regions || [])
     .filter((r) => r && r.name === name)
     .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  // 当前选中的记录（详情展示源；记录被删/列表刷新后不存在则自动收起）
+  const selected = records.find((r) => r.id === selectedId) || null;
 
   /** 删除一条测量记录（二次确认） */
   const confirmDelete = async (r) => {
@@ -50,6 +57,7 @@ export default function RegionScreen() {
       await Promise.resolve(deleteRegion(r.id));
       dispatch({ type: 'TOAST', message: '已删除该条测量记录' });
       setConfirmId(null);
+      if (selectedId === r.id) setSelectedId(null); // 删除的正是正在查看详情的记录 → 收起
       await loadRegions();
     } catch (err) {
       const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
@@ -100,6 +108,22 @@ export default function RegionScreen() {
         <div className="cap">按测量时间顺序 · 宜居度 score（森林绿）与 人为噪声%（陶土色）</div>
       </div>
 
+      {/* 选中的单条记录 → 完整综合数据 + 返回列表 */}
+      {selected && (
+        <div className="region-detail">
+          <div className="region-detail-back">
+            <button onClick={() => setSelectedId(null)}>
+              <IconBack size={14} />
+              返回列表
+            </button>
+            <span className="region-detail-recording">
+              {selected.detail && selected.detail.recording ? selected.detail.recording : formatISODate(selected.created_at)}
+            </span>
+          </div>
+          <RegionSummary summary={selected.detail} />
+        </div>
+      )}
+
       {/* 测量记录列表 */}
       <div className="eyebrow mb-2.5 mt-5">测量记录 · {records.length} 次</div>
       {records.length === 0 ? (
@@ -111,12 +135,17 @@ export default function RegionScreen() {
         records.map((r) => {
           const lv = r.detail && r.detail.livability ? r.detail.livability : {};
           const speciesCount = r.detail && typeof r.detail.speciesCount === 'number' ? r.detail.speciesCount : (r.detail && Array.isArray(r.detail.species) ? r.detail.species.length : '—');
+          const recordingName = r.detail && r.detail.recording ? r.detail.recording : '';
           return (
-            <div className="region-row region-row-det" key={r.id}>
+            <div
+              className={`region-row region-row-det${selectedId === r.id ? ' region-row-det-active' : ''}`}
+              key={r.id}
+              onClick={() => setSelectedId(r.id)}
+            >
               <div className="region-row-main">
-                <b>{formatISODate(r.created_at)}</b>
+                <b>{recordingName || formatISODate(r.created_at)}</b>
                 <span>
-                  宜居度 {lv.score != null ? lv.score : '—'} · 噪声 {lv.noise != null ? `${lv.noise}%` : '—'} · {speciesCount} 种鸟
+                  {formatISODate(r.created_at)} · 宜居度 {lv.score != null ? lv.score : '—'} · 噪声 {lv.noise != null ? `${lv.noise}%` : '—'} · {speciesCount} 种鸟
                 </span>
               </div>
               {lv.score != null && (
@@ -124,10 +153,23 @@ export default function RegionScreen() {
                   {lv.score >= 70 ? '宜居' : lv.score >= 50 ? '一般' : '受压'}
                 </Chip>
               )}
+              <button
+                className="detail-chevron"
+                aria-label="查看完整综合数据"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedId(r.id);
+                }}
+              >
+                <IconChevronRight size={15} />
+              </button>
               {confirmId === r.id ? (
                 <button
                   className="hist-del hist-del-confirm"
-                  onClick={() => confirmDelete(r)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    confirmDelete(r);
+                  }}
                 >
                   确认删除？
                 </button>
@@ -135,7 +177,10 @@ export default function RegionScreen() {
                 <button
                   className="hist-del"
                   aria-label="删除测量记录"
-                  onClick={() => setConfirmId(r.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmId(r.id);
+                  }}
                 >
                   <IconTrash size={14} />
                 </button>
