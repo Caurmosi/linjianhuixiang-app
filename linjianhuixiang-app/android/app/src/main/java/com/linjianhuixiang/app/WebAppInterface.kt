@@ -2,6 +2,8 @@ package com.linjianhuixiang.app
 
 import android.content.ContentValues
 import android.content.Context
+import android.location.Location
+import android.location.LocationManager
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Environment
@@ -25,19 +27,22 @@ import java.io.IOException
  *   window.AndroidBridge.startNativeRecord()
  *   window.AndroidBridge.stopNativeRecord()
  *   window.AndroidBridge.isNativeRecording()
+ *   window.AndroidBridge.getLocation()
  *   window.AndroidBridge.saveAudio(dataUrl, filename)
  *   window.AndroidBridge.importAudio(dataUrl, filename)
  *   window.AndroidBridge.saveImage(dataUrl, filename)
  *
  * 实时录音：优先走原生 MediaRecorder（startNativeRecord/stopNativeRecord），
  * 输出 m4a(aac) 并 Base64 返回，绕开 WebView getUserMedia 在部分机型/ file:// 下不可靠的问题。
- * 权限相关能力由 MainActivity 注入 lambda（ensureRecordPermission / ensureWritePermission），
- * 本类不直接持有 Activity，保持依赖干净。
+ * 定位：getLocation() 返回 last known "lng,lat"（GPS→NETWORK 兜底），供录音标点。
+ * 权限相关能力由 MainActivity 注入 lambda（ensureRecordPermission / ensureWritePermission /
+ * ensureLocationPermission），本类不直接持有 Activity，保持依赖干净。
  */
 class WebAppInterface(
     private val context: Context,
     private val ensureRecordPermission: () -> Boolean = { false },
-    private val ensureWritePermission: () -> Boolean = { false }
+    private val ensureWritePermission: () -> Boolean = { false },
+    private val ensureLocationPermission: () -> Boolean = { false }
 ) {
 
     // 原生录音状态：一次只允许一段活动录音（startNativeRecord 成功即占用，stopNativeRecord 后释放）
@@ -146,6 +151,43 @@ class WebAppInterface(
     /** 是否正在原生录音（供前端轮询 / 降级判断） */
     @JavascriptInterface
     fun isNativeRecording(): Boolean = nativeRecorder != null
+
+    /**
+     * GPS 定位：返回 "lng,lat"（6 位小数，GCJ-02/WGS84 原样透传，前端按高德瓦片直接使用）。
+     * - 未授权 → 发起系统权限请求，返回 ""（前端可手动选点）；
+     * - 取 last known location：GPS_PROVIDER 优先，NETWORK_PROVIDER 兜底；
+     * - 无任何已知位置 → ""。
+     */
+    @Suppress("DEPRECATION")
+    @JavascriptInterface
+    fun getLocation(): String {
+        if (!ensureLocationPermission()) {
+            Log.i(TAG, "getLocation: 无定位权限，返回空")
+            return ""
+        }
+        val locationManager =
+            context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                ?: run {
+                    Log.e(TAG, "getLocation: LocationManager 不可用")
+                    return ""
+                }
+        val location: Location? =
+            try {
+                locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            } catch (e: Exception) {
+                Log.w(TAG, "getLocation: getLastKnownLocation 异常: ${e.message}")
+                null
+            }
+        if (location == null) {
+            Log.i(TAG, "getLocation: 无已知位置，返回空")
+            return ""
+        }
+        val lng = "%.6f".format(location.longitude)
+        val lat = "%.6f".format(location.latitude)
+        Log.i(TAG, "getLocation: $lng,$lat")
+        return "$lng,$lat"
+    }
 
     /**
      * 保存录音到 App 专属外部目录（无需存储权限）。

@@ -259,6 +259,25 @@ export function deleteHistory() {
   return { ok: true };
 }
 
+// 地名搜索演示结果（mock 模式，避免依赖后端/网络）：北京城区常见点位（GCJ-02，与瓦片一致）
+export const GEOCODE_DEMO = [
+  { name: '中山公园(东门)', lng: 116.391284, lat: 39.907139 },
+  { name: '天坛公园', lng: 116.410886, lat: 39.882229 },
+  { name: '颐和园', lng: 116.275522, lat: 39.999103 },
+];
+
+/**
+ * mock 地名搜索：按关键词模糊匹配演示结果；无命中时返回全部演示结果（保证 mock 全流程可走通）。
+ * @param {string} q 地名关键词
+ * @returns {{query:string, results:Array<{name:string,lng:number,lat:number}>}}
+ */
+export function getGeocode(q) {
+  const key = String(q == null ? '' : q).trim();
+  if (!key) return { query: q, results: [] };
+  const hit = GEOCODE_DEMO.filter((r) => r.name.includes(key)).slice(0, 3);
+  return { query: q, results: hit.length > 0 ? hit : GEOCODE_DEMO.slice(0, 3) };
+}
+
 /**
  * 宜居度 → 文案与等级
  */

@@ -14,6 +14,8 @@ import Button from '../components/ui/Button';
 import Chip from '../components/ui/Chip';
 import LineChart from '../components/charts/LineChart';
 import RegionSummary from '../components/RegionSummary';
+import MapCanvas from '../components/map/MapCanvas';
+import { mapFromSummary } from '../components/map/mapUtils';
 import { deleteRegion, getRegions, renameRegion } from '../data/repository';
 import { formatISODate } from '../utils/dates';
 import { humanizeBackendError } from '../utils/errorText';
@@ -50,6 +52,8 @@ export default function RegionScreen() {
     .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
   // 当前选中的记录（详情展示源；记录被删/列表刷新后不存在则自动收起）
   const selected = records.find((r) => r.id === selectedId) || null;
+  // 选中记录的简化固定地图（detail.map；无 map → null，不渲染地图区块）
+  const detailMap = selected ? mapFromSummary(selected.detail) : null;
 
   /** 删除一条测量记录（二次确认） */
   const confirmDelete = async (r) => {
@@ -120,6 +124,25 @@ export default function RegionScreen() {
               {selected.detail && selected.detail.recording ? selected.detail.recording : formatISODate(selected.created_at)}
             </span>
           </div>
+
+          {/* 录音分布：记录 detail.map 存在 → 渲染真实地图（简化固定视图，标点渐变）；无 map → 不渲染 */}
+          {detailMap && (
+            <div className="map-wrap">
+              <h4>录音分布</h4>
+              <div className="cap">
+                {detailMap.points.length} 个录音标点 · 按宜居度渐变着色 · 简化固定视图
+              </div>
+              <MapCanvas
+                key={selected.id}
+                center={detailMap.center}
+                zoom={detailMap.zoom}
+                points={detailMap.points}
+                interactive={false}
+                height={280}
+              />
+            </div>
+          )}
+
           <RegionSummary summary={selected.detail} />
         </div>
       )}

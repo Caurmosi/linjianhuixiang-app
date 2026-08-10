@@ -1304,6 +1304,59 @@ body {
   background: linear-gradient(90deg, #e6f3ea, var(--forest-400), var(--forest-700));
 }
 
+/* ===== 地图（MapPicker / MapCanvas）===== */
+.ljx-map-canvas-interactive {
+  cursor: crosshair;
+}
+.map-picker-search {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.map-picker-search .save-panel-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+.map-picker-results {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.map-picker-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.map-picker-result:last-child {
+  border-bottom: none;
+}
+.map-picker-result i {
+  font-style: normal;
+  color: var(--ink-soft);
+  font-size: 10.5px;
+}
+.map-picker-result:active {
+  background: var(--paper);
+}
+.map-picker-fixed-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.map-unsupported {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
 /* ===== 设置 ===== */
 .set-list {
   background: var(--surface);

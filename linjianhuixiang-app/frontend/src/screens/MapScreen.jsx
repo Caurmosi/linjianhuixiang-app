@@ -3,19 +3,23 @@
  * 声景地图：
  *  - 有 batchSummary（多录音聚合综合）→ 综合视图：复用 <RegionSummary summary={batchSummary} />
  *    渲染完整综合数据（宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 声景分布 + 波形），
- *    并提供「保存地区记录」（命名输入 → saveRegion → 同名自动归组）+「清除综合，返回首页」；
- *  - 无 batchSummary → 原有单点分析视图：分段切换「时间热力图 / 空间分布」，多绿地样点对比；
+ *    并提供「录音分布」真实地图（MapLibre+高德瓦片）：已有简化固定地图 → MapCanvas 锁定视图，
+ *    无地图 → MapPicker 引导（搜索地名 / 拖动缩放 / 点击加点 → 简化固定）；
+ *    以及「保存地区记录」（命名输入 → saveRegion → 同名自动归组）+「清除综合，返回首页」；
+ *  - 无 batchSummary → 原单点分析视图：分段切换「时间热力图 / 空间分布」，
+ *    空间分布显示「先完成多段分析，再在地图上标记位置」空态引导；
  *  - 两种视图下均展示「地区记录」区块：按名称分组、组内按时间升序，点击进入地区详情（趋势对比）。
  */
 import { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Button from '../components/ui/Button';
-import Chip from '../components/ui/Chip';
 import RegionSummary from '../components/RegionSummary';
 import HeatmapChart from '../components/charts/HeatmapChart';
-import MapChart from '../components/charts/MapChart';
-import { getGreenSpaces, getRegions, deleteRegion, saveRegion } from '../data/repository';
+import MapCanvas from '../components/map/MapCanvas';
+import MapPicker from '../components/map/MapPicker';
+import { mapFromSummary } from '../components/map/mapUtils';
+import { getRegions, deleteRegion, saveRegion } from '../data/repository';
 import { formatISODate } from '../utils/dates';
 import { humanizeBackendError } from '../utils/errorText';
 import { IconChevronRight, IconTrash } from '../components/icons';
@@ -39,14 +43,14 @@ function groupRegionsByName(regions) {
 export default function MapScreen() {
   const { state, dispatch } = useApp();
   const [seg, setSeg] = useState('heat');
-  const [greenIndex, setGreenIndex] = useState(0);
-  const [greenSpaces, setGreenSpaces] = useState([]);
   // 地区记录：列表 + 保存命名面板 + 行删除二次确认
   const regions = state.regions || [];
   const [showSavePanel, setShowSavePanel] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmRegionId, setConfirmRegionId] = useState(null);
+  // 录音分布：已有简化固定地图时锁定视图，「重新调整」→ MapPicker 编辑态
+  const [editingMap, setEditingMap] = useState(false);
   const a = state.analysis;
   const summary = state.batchSummary;
 
@@ -59,20 +63,9 @@ export default function MapScreen() {
     }
   };
 
-  // 异步加载多绿地数据（mock 同步返回；api 后端不可达降级空数组，守卫渲染防白屏）
+  // 加载地区记录（mock 同步返回；api 后端不可达降级空数组，守卫渲染防白屏）
   useEffect(() => {
-    let alive = true;
-    Promise.resolve(getGreenSpaces())
-      .then((g) => {
-        if (alive) setGreenSpaces(Array.isArray(g) ? g : []);
-      })
-      .catch(() => {
-        if (alive) setGreenSpaces([]);
-      });
     loadRegions();
-    return () => {
-      alive = false;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -202,10 +195,17 @@ export default function MapScreen() {
       Array.isArray(summary.mapPoints) && summary.mapPoints.length > 0
         ? summary.mapPoints.length
         : summary.speciesCount || 0;
+    const mapData = mapFromSummary(summary);
 
     const clearBatch = () => {
       dispatch({ type: 'CLEAR_BATCH' });
       dispatch({ type: 'TAB', tab: 'home', screen: 'home' });
+    };
+
+    /** 简化固定：写入 batchSummary.map（保存地区记录时随 detail 落库） */
+    const handleFixed = (data) => {
+      dispatch({ type: 'SET_BATCH_MAP', map: data });
+      setEditingMap(false);
     };
 
     return (
@@ -214,6 +214,54 @@ export default function MapScreen() {
 
         {/* 完整综合数据：宜居度大卡 + 统计 + 物种清单 + 声学指数 + 热力图 + 声景分布 + 波形 */}
         <RegionSummary summary={summary} />
+
+        {/* 录音分布：真实地图（MapLibre + 高德瓦片）——
+            已有简化固定地图 → MapCanvas 锁定视图；无地图 → MapPicker 引导 */}
+        <div className="map-wrap">
+          <h4>录音分布</h4>
+          {editingMap ? (
+            <MapPicker
+              initialCenter={mapData ? mapData.center : undefined}
+              initialZoom={mapData ? mapData.zoom : 12}
+              points={mapData ? mapData.points : []}
+              onFixed={handleFixed}
+            />
+          ) : mapData ? (
+            <>
+              <div className="cap">
+                {mapData.points.length} 个录音标点 · 按宜居度渐变着色 · 简化固定视图
+              </div>
+              <MapCanvas
+                center={mapData.center}
+                zoom={mapData.zoom}
+                points={mapData.points}
+                interactive={false}
+                height={300}
+              />
+              <div className="legend">
+                <span>受压</span>
+                <span className="scale" />
+                <span>宜居</span>
+                <span className="ml-auto">录音点：GPS / 手动</span>
+              </div>
+              <div className="map-picker-fixed-actions">
+                <Button variant="ghost" onClick={() => setEditingMap(true)} className="mt-3">
+                  重新调整
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="cap">搜索地名定位 · 拖动缩放 · 点击地图添加录音点 → 简化固定</div>
+              <MapPicker
+                initialCenter={undefined}
+                initialZoom={12}
+                points={[]}
+                onFixed={handleFixed}
+              />
+            </>
+          )}
+        </div>
 
         {/* 保存地区记录 */}
         <div className="mt-4">
@@ -236,8 +284,6 @@ export default function MapScreen() {
   }
 
   // ---- 原单点分析视图 ----
-  const green = greenSpaces[greenIndex] || greenSpaces[0] || { name: '暂无数据', points: [] };
-
   return (
     <div>
       <AppBar title="声景地图" onBack={() => dispatch({ type: 'BACK' })} />
@@ -263,48 +309,16 @@ export default function MapScreen() {
             <span className="ml-auto">频段：低 → 高</span>
           </div>
         </div>
-      ) : a.segmentPoints && a.segmentPoints.length > 0 ? (
-        <div className="map-wrap">
-          <h4>本次录音声景分布</h4>
-          <div className="cap">录音按时间切片 · {a.segmentPoints.length} 个片段</div>
-          <MapChart points={a.segmentPoints} />
-          <div className="legend">
-            <Chip tone="good" className="!px-2 !py-0.5">
-              宜居
-            </Chip>
-            <Chip tone="mid" className="!px-2 !py-0.5">
-              一般
-            </Chip>
-            <Chip tone="bad" className="!px-2 !py-0.5">
-              受压
-            </Chip>
-          </div>
-        </div>
       ) : (
         <div className="map-wrap">
-          <h4>样点空间分布</h4>
-          {/* 多绿地切换器（segmentPoints 缺失时回退：模拟对比样点） */}
-          <div className="seg green-switch" style={{ marginBottom: 10 }}>
-            {greenSpaces.map((g, i) => (
-              <button key={g.id} className={i === greenIndex ? 'on' : ''} onClick={() => setGreenIndex(i)}>
-                {g.name}
-              </button>
-            ))}
-          </div>
-          <div className="cap">
-            {green.name} · {green.points.length} 个监测样点 · 模拟对比样点
-          </div>
-          <MapChart points={green.points} />
-          <div className="legend">
-            <Chip tone="good" className="!px-2 !py-0.5">
-              宜居
-            </Chip>
-            <Chip tone="mid" className="!px-2 !py-0.5">
-              一般
-            </Chip>
-            <Chip tone="bad" className="!px-2 !py-0.5">
-              受压
-            </Chip>
+          <h4>空间分布</h4>
+          <div className="cap">真实地图 · 多段录音聚合后在地图上标记位置</div>
+          <div className="py-4 text-center">
+            <p className="text-[12.5px] font-bold">先完成多段分析，再在地图上标记位置</p>
+            <p className="text-[11px] text-ink-soft mt-1">
+              在「实时录音」录制 ≥2 段，或在首页导入多段音频完成批量分析后，
+              即可在综合页搜索地名 / 手动选点标记各段录音位置
+            </p>
           </div>
         </div>
       )}

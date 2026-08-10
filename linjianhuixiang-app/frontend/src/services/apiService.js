@@ -208,6 +208,17 @@ export function renameRegion(id, name) {
 }
 
 /**
+ * 地名搜索（GET /api/geocode?q=…，后端代理高德 Web 服务）。
+ * @param {string} q 地名关键词
+ * @returns {Promise<{query:string, results:Array<{name:string,lng:number,lat:number}>}>}
+ * @throws 后端不可达 / 400「地名搜索暂不可用」（调用方降级手动定位）
+ */
+export function getGeocode(q) {
+  const query = q == null ? '' : String(q).trim();
+  return request(`/api/geocode?q=${encodeURIComponent(query)}`, { fn: 'getGeocode' });
+}
+
+/**
  * 根据录音名 + 覆盖项构建分析结果（async）。
  * - 若 overrides.audioFile 为 File/Blob：上传到 POST /api/analyze，返回真实完整分析；
  * - 否则（演示/历史流程，只有录音名）：组合后端各数据端点，应用与 mock 一致的合并规则。

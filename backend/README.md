@@ -47,10 +47,35 @@ backend/
 | GET | `/api/green-spaces` | 多绿地对比 `[{name, points: [...]}]` |
 | GET | `/api/suggestions` | 提升建议字符串数组 |
 | GET | `/api/history` | 历史记录 `[{id, name, species, score, duration, noise, bio, sound}]` |
+| GET | `/api/geocode` | 地名搜索 `{query, results: [{name, lng, lat}]}`（高德 Web 服务代理） |
 | POST | `/api/analyze` | multipart 上传音频，返回完整分析结果 |
 
 > GET 数据端点在没有分析记录时返回内置基准数据（与前端 mock 一致）；
 > 每次 `POST /api/analyze` 后会持久化为"最近一次分析"，GET 端点随即返回真实分析结果。
+
+### GET /api/geocode 地名搜索代理
+
+地图页地名搜索（MapPicker）走后端代理，避免前端直连高德（key 不暴露到客户端）：
+
+```bash
+curl "http://localhost:8000/api/geocode?q=中山公园"
+```
+
+```jsonc
+{ "query": "中山公园", "results": [{ "name": "中山公园(东门)", "lng": 116.391284, "lat": 39.907139 }] }
+```
+
+- 优先调高德 **geocode/geo**（`address=q`），空结果自动兜底 **place/text**（`keywords=q`），各取前 3 条；
+- 坐标为高德 GCJ-02，与前端高德瓦片一致，无需偏移换算；
+- 高德不可达 / 未配置 key → `400 {"detail": "地名搜索暂不可用"}`（前端降级手动定位）。
+
+高德 Web 服务 key 通过环境变量 `AMAP_KEY` 配置，默认使用内置 key（可改）：
+
+```bash
+export AMAP_KEY=你的key    # Windows: set AMAP_KEY=你的key
+```
+
+> 内置 key 仅用于演示跑通，建议部署时替换为自有 key；瓦片底图走高德**公开栅格瓦片**（无 key），与 Web 服务 key 相互独立。
 
 ### POST /api/analyze 请求
 

@@ -67,6 +67,16 @@ class MainActivity : AppCompatActivity() {
             else Toast.makeText(this, "未获得存储权限，无法保存到相册", Toast.LENGTH_SHORT).show()
         }
 
+    // 定位权限：H5 通过 AndroidBridge.getLocation() 触发（同步返回当前状态，
+    // 未授权时发起系统请求；请求进行中 pending 防重弹）
+    private var locationPermissionRequestPending = false
+    private val locationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            locationPermissionRequestPending = false
+            if (granted) Toast.makeText(this, "已获得定位权限", Toast.LENGTH_SHORT).show()
+            else Toast.makeText(this, "未获得定位权限，可在地图页手动选点", Toast.LENGTH_SHORT).show()
+        }
+
     /** 供 JS 桥调用：同步返回当前是否有录音权限；无则发起系统权限请求 */
     private fun ensureRecordPermission(): Boolean {
         return if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -91,6 +101,20 @@ class MainActivity : AppCompatActivity() {
             if (!writePermissionRequestPending) {
                 writePermissionRequestPending = true
                 writeStorageLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+            false
+        }
+    }
+
+    /** 供 JS 桥调用：同步返回当前是否有精确定位权限；无则发起系统权限请求（pending 防重弹） */
+    private fun ensureLocationPermission(): Boolean {
+        return if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            locationPermissionRequestPending = false
+            true
+        } else {
+            if (!locationPermissionRequestPending) {
+                locationPermissionRequestPending = true
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             }
             false
         }
@@ -160,7 +184,12 @@ class MainActivity : AppCompatActivity() {
         // JS 桥：H5 通过 window.AndroidBridge 调用原生能力；
         // 权限相关由本 Activity 提供实现（同步返回当前授权状态）。
         webView.addJavascriptInterface(
-            WebAppInterface(this, ::ensureRecordPermission, ::ensureWritePermission),
+            WebAppInterface(
+                this,
+                ::ensureRecordPermission,
+                ::ensureWritePermission,
+                ::ensureLocationPermission
+            ),
             "AndroidBridge"
         )
 

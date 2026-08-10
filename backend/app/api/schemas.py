@@ -81,6 +81,19 @@ class RegionRename(BaseModel):
     name: str = Field(..., min_length=1, description="新地区名称")
 
 
+class GeocodeItem(BaseModel):
+    """地名搜索结果单项：name 展示名 + lng/lat 坐标（高德 GCJ-02，与瓦片一致）。"""
+    name: str
+    lng: float
+    lat: float
+
+
+class GeocodeResult(BaseModel):
+    """GET /api/geocode 响应：query + 前 3 条结果（geocode 优先，place 兜底）。"""
+    query: str
+    results: list[GeocodeItem] = []
+
+
 class AnalysisResult(BaseModel):
     recording: str
     species: list[Species]

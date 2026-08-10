@@ -116,6 +116,27 @@ test('CLEAR_BATCH: 清除综合摘要与队列状态，不跳转', () => {
   assert.equal(next.screen, 'map', 'CLEAR_BATCH 本身不改变屏幕');
 });
 
+test('SET_BATCH_MAP: 写入 batchSummary.map（简化固定地图），其余字段不变', () => {
+  const s1 = reducer(initialState, { type: 'COMPLETE_BATCH', summary: { recording: 'x', mapPoints: [] } });
+  const mapData = {
+    center: [116.39, 39.9],
+    zoom: 13,
+    bounds: null,
+    points: [{ lng: 116.39, lat: 39.9, name: '第1段', score: 72, from: 'gps' }],
+  };
+  const next = reducer(s1, { type: 'SET_BATCH_MAP', map: mapData });
+  assert.deepEqual(next.batchSummary.map, mapData, '简化固定地图写入 batchSummary.map');
+  assert.equal(next.batchSummary.recording, 'x', '摘要其他字段保持不变');
+  assert.deepEqual(arr(next.batchSummary.mapPoints), [], '不影响 mapPoints');
+  assert.equal(next.screen, 'map', '不改变屏幕');
+});
+
+test('SET_BATCH_MAP: 无 batchSummary 时安全跳过（不崩）；map 为 null 清除', () => {
+  assert.equal(reducer(initialState, { type: 'SET_BATCH_MAP', map: { center: [1, 2] } }).batchSummary, null);
+  const s1 = reducer(initialState, { type: 'COMPLETE_BATCH', summary: { recording: 'x' } });
+  assert.equal(reducer(s1, { type: 'SET_BATCH_MAP', map: null }).batchSummary.map, null);
+});
+
 test('START_ANALYSIS / COMPLETE_ANALYSIS: 新单次分析会清空旧综合摘要', () => {
   const s1 = reducer(initialState, { type: 'COMPLETE_BATCH', summary: { recording: '旧' } });
   const s2 = reducer(s1, { type: 'START_ANALYSIS', recording: '新.wav' });

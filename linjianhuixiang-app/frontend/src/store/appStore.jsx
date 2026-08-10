@@ -155,6 +155,14 @@ function reducer(state, action) {
       // 写入地区记录列表（进入地图页 / 保存 / 删除 / 重命名后刷新）
       return { ...state, regions: Array.isArray(action.items) ? action.items : [] };
 
+    case 'SET_BATCH_MAP':
+      // 综合摘要简化固定地图（MapPicker「简化固定」回调）：写入 batchSummary.map，
+      // 保存地区记录时随 detail 落库（RegionScreen 按 detail.map 渲染真实地图）
+      return {
+        ...state,
+        batchSummary: state.batchSummary ? { ...state.batchSummary, map: action.map || null } : state.batchSummary,
+      };
+
     case 'OPEN_REGION':
       // 进入地区详情：记录地区名（同名记录归组展示 / 趋势对比）
       return {

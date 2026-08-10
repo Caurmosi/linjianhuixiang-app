@@ -117,6 +117,28 @@ function buildMapPoints(analyses) {
 }
 
 /**
+ * 各段 GPS 坐标 → 真实地图标点（summary.map.points）。
+ * 仅并入带合法 lng/lat 的段（无坐标的段留空，由 MapPicker 手动选点补充）。
+ * 标点 shape：{lng, lat, name, score, from:'gps'|'manual'}（与地图数据契约一致）。
+ */
+function buildMapPointsGeo(analyses) {
+  const points = [];
+  analyses.forEach((a, i) => {
+    const lng = Number(a && a.lng);
+    const lat = Number(a && a.lat);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return; // 无坐标段留空
+    points.push({
+      lng,
+      lat,
+      name: `第${i + 1}段`,
+      score: a && a.livability && typeof a.livability.score === 'number' ? a.livability.score : 50,
+      from: a && a.from === 'gps' ? 'gps' : 'manual',
+    });
+  });
+  return points;
+}
+
+/**
  * 多录音聚合（D）
  * @param {Array<object>} analyses 多个完整 analysis（buildAnalysis 输出形态）
  * @returns {object} 综合摘要；空数组返回一份「零值」摘要（守卫，不抛错）
@@ -132,6 +154,7 @@ export function aggregateAnalyses(analyses) {
     livability: { score: 0, grade: '受压', gradeEn: 'Stressed', noise: 0, bio: 0, sound: 0 },
     heatmap: averageHeatmap(list),
     mapPoints: [],
+    map: null,
     waveform: [],
     durationSec: 0,
   };
@@ -155,6 +178,13 @@ export function aggregateAnalyses(analyses) {
 
   // 空间样点：每段一个
   summary.mapPoints = buildMapPoints(list);
+
+  // 真实地图：各段 GPS 坐标并入 summary.map.points（无坐标 → map 为 null，地图页引导手动选点）
+  const geoPoints = buildMapPointsGeo(list);
+  summary.map =
+    geoPoints.length > 0
+      ? { center: [geoPoints[0].lng, geoPoints[0].lat], zoom: 13, bounds: null, points: geoPoints }
+      : null;
 
   // 波形：取最长录音的波形（重合度取舍说明：多段拼接在视觉上等同加权平均，
   // 直接取时长最长一段作代表，避免 N 段不同长度波形混排失真）

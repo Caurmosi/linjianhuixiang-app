@@ -17,6 +17,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
+import requests
 import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 
@@ -183,6 +184,82 @@ def rename_region(item_id: int, payload: schemas.RegionRename) -> dict:
     record = database.get_db().get_region(item_id)
     assert record is not None
     return _region_record(record)
+
+
+# ---------------------------------------------------------------------------
+# 地名搜索代理（geocode）
+# ---------------------------------------------------------------------------
+def _parse_location(location: str) -> tuple[float, float] | None:
+    """解析高德 location "lng,lat" → (lng, lat)；非法格式返回 None。"""
+    if not location:
+        return None
+    try:
+        lng, lat = (float(v) for v in str(location).split(",")[:2])
+    except (ValueError, TypeError):
+        return None
+    if not (-180 <= lng <= 180 and -90 <= lat <= 90):
+        return None
+    return lng, lat
+
+
+def _amap_request(url: str, params: dict) -> dict | None:
+    """调用高德 Web 服务（5s 超时）；网络异常/非 JSON 返回 None。"""
+    try:
+        resp = requests.get(url, params=params, timeout=config.AMAP_TIMEOUT_SEC)
+        if resp.status_code != 200:
+            return None
+        return resp.json()
+    except Exception:
+        return None
+
+
+@router.get("/api/geocode", response_model=schemas.GeocodeResult, tags=["data"])
+def geocode(q: str = Query(..., min_length=1, max_length=100, description="地名关键词")) -> dict:
+    """
+    地名搜索代理：调高德 geocode 把地名转坐标（GCJ-02，与瓦片一致）。
+    - geocodes 非空 → 取前 3 条 formatted_address；
+    - 空结果 → place/text 兜底 → 取前 3 条 poi；
+    - 两者皆空 → 返回空 results（200）；
+    - 无 key / 高德不可达 / 异常 → 400「地名搜索暂不可用」（前端降级手动定位）。
+    """
+    key = config.AMAP_WEB_KEY
+    if not key:
+        raise HTTPException(status_code=400, detail="地名搜索暂不可用")
+
+    # 1) geocode 优先
+    data = _amap_request(config.AMAP_GEOCODE_URL, {"address": q, "key": key})
+    if data is None:
+        raise HTTPException(status_code=400, detail="地名搜索暂不可用")
+    geocodes = data.get("geocodes") if isinstance(data, dict) else None
+    items: list[dict] = []
+    if isinstance(geocodes, list) and geocodes:
+        for g in geocodes[:3]:
+            if not isinstance(g, dict):
+                continue
+            loc = _parse_location(g.get("location"))
+            if loc is None:
+                continue
+            lng, lat = loc
+            items.append({"name": g.get("formatted_address") or q, "lng": lng, "lat": lat})
+        if items:
+            return {"query": q, "results": items}
+
+    # 2) 空结果 → place/text 兜底
+    data = _amap_request(config.AMAP_PLACE_URL, {"keywords": q, "key": key})
+    if data is None:
+        raise HTTPException(status_code=400, detail="地名搜索暂不可用")
+    pois = data.get("pois") if isinstance(data, dict) else None
+    if isinstance(pois, list) and pois:
+        for p in pois[:3]:
+            if not isinstance(p, dict):
+                continue
+            loc = _parse_location(p.get("location"))
+            if loc is None:
+                continue
+            lng, lat = loc
+            items.append({"name": p.get("name") or q, "lng": lng, "lat": lat})
+
+    return {"query": q, "results": items[:3]}
 
 
 # ---------------------------------------------------------------------------

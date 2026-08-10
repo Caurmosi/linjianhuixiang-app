@@ -50,6 +50,26 @@ export default function RecordScreen() {
     setRecording(v);
   };
 
+  /** 读取原生 GPS 定位（AndroidBridge.getLocation() → "lng,lat"，6 位小数）；
+   *  无桥 / 未授权 / 无已知位置 → 返回手动模式（lng/lat 空，综合页 MapPicker 手动补） */
+  const readLocation = () => {
+    try {
+      const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
+      if (bridge && typeof bridge.getLocation === 'function') {
+        const raw = bridge.getLocation();
+        if (typeof raw === 'string' && raw.indexOf(',') > 0) {
+          const [lng, lat] = raw.split(',').map(Number);
+          if (Number.isFinite(lng) && Number.isFinite(lat)) {
+            return { lng, lat, from: 'gps' };
+          }
+        }
+      }
+    } catch (err) {
+      /* 定位异常按手动处理 */
+    }
+    return { lng: null, lat: null, from: 'manual' };
+  };
+
   /** 开始录音：原生桥优先，浏览器降级 getUserMedia+MediaRecorder */
   const startRecording = () => {
     if (recordingRef.current || pendingRef.current) return; // 已在录 / 正在启动
@@ -176,6 +196,11 @@ export default function RecordScreen() {
     }
     // 真机 API 上传路径不回传 durationSec：统一在段结果上注入，保证聚合总时长正确
     analysis = analysis && typeof analysis === 'object' ? { ...analysis, durationSec } : analysis;
+    // 录音标点：每段录音取一次 GPS（有则带坐标 from:'gps'，无则手动补 from:'manual'）
+    if (analysis && typeof analysis === 'object') {
+      const loc = readLocation();
+      analysis = { ...analysis, lng: loc.lng, lat: loc.lat, from: loc.from };
+    }
     setSegments((prev) =>
       prev.map((s) => (s.id === id ? { ...s, analyzing: false, failed: false, result: analysis } : s))
     );

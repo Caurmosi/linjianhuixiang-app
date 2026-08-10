@@ -169,6 +169,34 @@ test('mapPoints: 单段时样点居中（x=167, y=90）且不标「第N段」', 
   assert.equal(summary.mapPoints[0].y, 90);
 });
 
+test('map: 各段 GPS 坐标并入 summary.map.points（无坐标段留空），center 取首段', () => {
+  const withGps = buildAnalysis('g1.wav', {
+    lng: 116.391284,
+    lat: 39.907139,
+    from: 'gps',
+    livability: { score: 72, noise: 25, bio: 80, sound: 68 },
+  });
+  const withoutGps = buildAnalysis('g2.wav', { from: 'manual' });
+  const summary = aggregateAnalyses([withGps, withoutGps]);
+  assert.ok(summary.map, '有坐标段应生成 summary.map');
+  assert.deepEqual(summary.map.center, [116.391284, 39.907139], 'center 取首段坐标');
+  assert.equal(summary.map.zoom, 13);
+  assert.equal(summary.map.bounds, null);
+  assert.equal(summary.map.points.length, 1, '无坐标段留空');
+  assert.deepEqual(summary.map.points[0], {
+    lng: 116.391284,
+    lat: 39.907139,
+    name: '第1段',
+    score: 72,
+    from: 'gps',
+  });
+});
+
+test('map: 全部无坐标 → summary.map 为 null（地图页引导手动选点）', () => {
+  const summary = aggregateAnalyses([buildAnalysis('a.wav'), buildAnalysis('b.wav')]);
+  assert.equal(summary.map, null);
+});
+
 test('waveform: 取最长录音的波形（多段同长取第一段）', () => {
   const long = buildAnalysis('长.wav');
   long.waveform = Array.from({ length: 200 }, () => 0.5);

@@ -60,6 +60,17 @@ BIO_BAND = (2000.0, 8000.0)  # 鸟声主要频段
 ANTHRO_BAND = (500.0, 2000.0)  # 人为噪声（交通/机械）主要频段
 
 # ---------------------------------------------------------------------------
+# 高德地图 Web 服务（地名搜索代理）
+# ---------------------------------------------------------------------------
+# 仅用于后端代理 /api/geocode（geocode 地名 → 坐标），key 可覆盖/替换：
+#   export AMAP_KEY=你的key
+# 瓦片底图走高德公开栅格瓦片（无 key，见前端 MapCanvas），与此 key 无关。
+AMAP_WEB_KEY = os.getenv("AMAP_KEY", "ebb35c87bf1255f52b70bf9f59d2bcf8")
+AMAP_GEOCODE_URL = "https://restapi.amap.com/v3/geocode/geo"
+AMAP_PLACE_URL = "https://restapi.amap.com/v3/place/text"
+AMAP_TIMEOUT_SEC = 5.0  # 高德请求超时（秒）
+
+# ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
 CORS_ORIGINS = os.getenv("LJX_CORS_ORIGINS", "*")

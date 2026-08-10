@@ -122,6 +122,15 @@ export function renameRegion(id, name) {
   return { ...updated };
 }
 
+/**
+ * 地名搜索（MapPicker 用）：
+ *  - mock：本地演示数据（mockData.getGeocode，按关键词匹配 GEOCODE_DEMO）；
+ *  - api：后端 /api/geocode 代理高德 Web 服务（失败抛错，前端降级手动定位）。
+ */
+export function getGeocode(q) {
+  return useApi() ? apiService.getGeocode(q) : mockData.getGeocode(q);
+}
+
 /** 根据录音名 + 覆盖项构建分析结果（转发 mockData 实现） */
 export function buildAnalysis(name, overrides = {}) {
   return useApi() ? apiService.buildAnalysis(name, overrides) : mockData.buildAnalysis(name, overrides);

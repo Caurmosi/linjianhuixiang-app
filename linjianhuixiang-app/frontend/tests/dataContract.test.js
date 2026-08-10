@@ -15,6 +15,7 @@ import {
   REGIONS,
   buildAnalysis,
 } from '../src/data/mockData.js';
+import { aggregateAnalyses } from '../src/utils/aggregate.js';
 
 const srcDir = fileURLToPath(new URL('../src', import.meta.url));
 
@@ -179,8 +180,42 @@ describe('数据契约：repository 具名导入均真实存在', () => {
   });
 });
 
-describe('阈值联动端到端一致性（设置滑杆 ↔ 物种清单）', () => {
-  test('SettingsScreen 滑杆范围为 0.30–0.90、步进 0.01，与默认阈值 0.5 一致', () => {
+describe('数据契约：真实地图 map 数据形状', () => {
+  test('聚合摘要 summary.map = {center:[lng,lat], zoom, bounds, points:[{lng,lat,name,score,from}]}', () => {
+    const gps = buildAnalysis('第1段.wav', {
+      lng: 116.391284,
+      lat: 39.907139,
+      from: 'gps',
+      livability: { score: 72, noise: 25, bio: 80, sound: 68 },
+    });
+    const manual = buildAnalysis('第2段.wav', { from: 'manual' }); // 无坐标段留空
+    const summary = aggregateAnalyses([gps, manual]);
+    assert.ok(summary.map, '有坐标段应生成 summary.map');
+    const m = summary.map;
+    // center：双数值 [lng, lat]
+    assert.ok(Array.isArray(m.center) && m.center.length === 2, 'center 应为 [lng, lat]');
+    assert.ok(m.center.every((v) => typeof v === 'number'), 'center 应为数值');
+    assert.equal(typeof m.zoom, 'number', 'zoom 应为数值');
+    assert.ok(m.bounds === null || Array.isArray(m.bounds), 'bounds 可为 null 或数组');
+    // points：{lng, lat, name, score, from}
+    assert.ok(Array.isArray(m.points), 'points 应为数组');
+    assert.equal(m.points.length, 1, '无坐标段留空，只并入有坐标的段');
+    for (const p of m.points) {
+      for (const f of ['lng', 'lat', 'name', 'score', 'from']) {
+        assert.ok(f in p, `map.points 标点缺少字段 ${f}`);
+      }
+      assert.equal(typeof p.lng, 'number');
+      assert.equal(typeof p.lat, 'number');
+    }
+  });
+
+  test('无坐标段 → summary.map 为 null（地图页引导手动选点）', () => {
+    const summary = aggregateAnalyses([buildAnalysis('a.wav'), buildAnalysis('b.wav')]);
+    assert.equal(summary.map, null);
+  });
+});
+
+describe('阈值联动端到端一致性（设置滑杆 ↔ 物种清单）', () => {  test('SettingsScreen 滑杆范围为 0.30–0.90、步进 0.01，与默认阈值 0.5 一致', () => {
     const settingsPath = fileURLToPath(new URL('../src/screens/SettingsScreen.jsx', import.meta.url));
     const s = readFileSync(settingsPath, 'utf8');
     assert.match(s, /min="0\.30"/, '滑杆 min 应为 0.30');
