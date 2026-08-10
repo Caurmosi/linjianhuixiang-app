@@ -42,6 +42,7 @@ class Database:
                     noise INTEGER NOT NULL,
                     bio INTEGER NOT NULL,
                     sound INTEGER NOT NULL,
+                    detail_json TEXT,
                     created_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS analyses (
@@ -52,17 +53,37 @@ class Database:
                 );
                 """
             )
+            # 兼容旧库：history 表早期版本无 detail_json 列
+            # （SQLite 不支持 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，用 try/except 保证幂等）
+            try:
+                self._conn.execute("ALTER TABLE history ADD COLUMN detail_json TEXT")
+            except sqlite3.OperationalError:
+                pass
             self._conn.commit()
 
     # ------------------------------------------------------------------ 历史
     def insert_history(self, row: dict) -> dict:
         with self._lock:
+            analysis = row.get("analysis")
+            params = {
+                "name": row["name"],
+                "species": row["species"],
+                "score": row["score"],
+                "duration": row["duration"],
+                "noise": row["noise"],
+                "bio": row["bio"],
+                "sound": row["sound"],
+                "created_at": row.get("created_at", _now()),
+                "detail_json": json.dumps(analysis, ensure_ascii=False) if analysis is not None else None,
+            }
             cur = self._conn.execute(
                 """
-                INSERT INTO history (name, species, score, duration, noise, bio, sound, created_at)
-                VALUES (:name, :species, :score, :duration, :noise, :bio, :sound, :created_at)
+                INSERT INTO history
+                    (name, species, score, duration, noise, bio, sound, detail_json, created_at)
+                VALUES
+                    (:name, :species, :score, :duration, :noise, :bio, :sound, :detail_json, :created_at)
                 """,
-                row,
+                params,
             )
             self._conn.commit()
             row["id"] = int(cur.lastrowid)
@@ -71,11 +92,23 @@ class Database:
     def list_history(self, limit: int = 100) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, name, species, score, duration, noise, bio, sound, created_at "
+                "SELECT id, name, species, score, duration, noise, bio, sound, created_at, detail_json "
                 "FROM history ORDER BY id DESC LIMIT ?",
                 (int(limit),),
             ).fetchall()
-        return [dict(r) for r in rows]
+        items = []
+        for r in rows:
+            item = dict(r)
+            raw = item.pop("detail_json", None)
+            if raw:
+                try:
+                    item["analysis"] = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    item["analysis"] = None
+            else:
+                item["analysis"] = None
+            items.append(item)
+        return items
 
     # ------------------------------------------------------------------ 分析
     def save_analysis(self, detail: dict) -> int:

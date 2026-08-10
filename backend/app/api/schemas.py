@@ -57,6 +57,8 @@ class HistoryItem(BaseModel):
     bio: int
     sound: int
     created_at: str | None = None
+    # 每次分析的完整快照（前端回放优先恢复；旧记录无快照时为 None）
+    analysis: dict | None = None
 
 
 class AnalysisResult(BaseModel):

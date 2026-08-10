@@ -107,10 +107,55 @@ export const SUGGESTIONS = [
 ];
 
 // 历史记录
+// 每条携带 analysis 完整快照（回放时优先恢复：物种清单/热力图/波形/指数等随记录变化）。
+// 各条 species 清单不同（清晨 9 种全量 / 午后 6 种 / 黄昏以乌鸫·大山雀·喜鹊为主），
+// 保证点击不同记录时回放内容不同，而非始终显示"最后一次测量"。
 export const HISTORY = [
-  { id: 1, name: '中山公园_晨.wav', species: 9, score: 68, duration: '3:24', noise: 34, bio: 76, sound: 60 },
-  { id: 2, name: '滨江绿地_午后.mp3', species: 6, score: 54, duration: '2:10', noise: 51, bio: 62, sound: 45 },
-  { id: 3, name: '西郊森林公园_黄昏.wav', species: 12, score: 82, duration: '4:05', noise: 22, bio: 88, sound: 74 },
+  {
+    id: 1,
+    name: '中山公园_晨.wav',
+    species: 9,
+    score: 68,
+    duration: '3:24',
+    noise: 34,
+    bio: 76,
+    sound: 60,
+    analysis: buildAnalysis('中山公园_晨.wav', {
+      speciesCount: 9,
+      species: SPECIES,
+      livability: { score: 68, noise: 34, bio: 76, sound: 60 },
+    }),
+  },
+  {
+    id: 2,
+    name: '滨江绿地_午后.mp3',
+    species: 6,
+    score: 54,
+    duration: '2:10',
+    noise: 51,
+    bio: 62,
+    sound: 45,
+    analysis: buildAnalysis('滨江绿地_午后.mp3', {
+      speciesCount: 6,
+      species: SPECIES.slice(0, 6),
+      livability: { score: 54, noise: 51, bio: 62, sound: 45 },
+    }),
+  },
+  {
+    id: 3,
+    name: '西郊森林公园_黄昏.wav',
+    species: 12,
+    score: 82,
+    duration: '4:05',
+    noise: 22,
+    bio: 88,
+    sound: 74,
+    analysis: buildAnalysis('西郊森林公园_黄昏.wav', {
+      speciesCount: 12,
+      species: [...SPECIES.slice(3), ...SPECIES.slice(0, 3)], // 黄昏物种置前，清单与晨间不同
+      livability: { score: 82, noise: 22, bio: 88, sound: 74 },
+    }),
+  },
 ];
 
 /**
@@ -148,8 +193,13 @@ export function buildAnalysis(name, overrides = {}) {
 /**
  * 由历史记录条目构建分析结果
  * @param {object} item HISTORY 中的一条
+ * 优先返回 item.analysis 完整快照（回放恢复物种/波形/指数/热力图等）；
+ * 旧记录无快照时降级用 buildAnalysis 按汇总字段重建。
  */
 export function analysisForHistory(item) {
+  if (item && item.analysis && typeof item.analysis === 'object') {
+    return item.analysis;
+  }
   return buildAnalysis(item.name, {
     speciesCount: item.species,
     livability: { score: item.score, noise: item.noise, bio: item.bio, sound: item.sound },

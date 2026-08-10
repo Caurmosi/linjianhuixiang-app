@@ -167,6 +167,16 @@ test('HISTORY: 3 条历史记录，字段完整', () => {
   }
 });
 
+test('HISTORY: 每条携带 analysis 完整快照，speciesCount 与条目自洽', () => {
+  for (const h of HISTORY) {
+    assert.ok(h.analysis && typeof h.analysis === 'object', `${h.name} 缺少 analysis 快照`);
+    assert.equal(h.analysis.recording, h.name);
+    assert.equal(h.analysis.speciesCount, h.species);
+    assert.ok(Array.isArray(h.analysis.species) && h.analysis.species.length > 0, `${h.name} analysis.species 应为非空数组`);
+    assert.equal(h.analysis.livability.score, h.score);
+  }
+});
+
 test('buildAnalysis: 默认构建完整分析结果，覆盖所有屏幕引用字段', () => {
   const a = buildAnalysis('中山公园_晨.wav', {
     speciesCount: 9,
@@ -257,6 +267,17 @@ test('analysisForHistory: 每条历史记录都能正确还原为分析结果', 
     assert.equal(a.livability.bio, item.bio);
     assert.equal(a.livability.sound, item.sound);
   }
+});
+
+test('analysisForHistory: 优先返回 item.analysis 完整快照（同一引用）', () => {
+  for (const item of HISTORY) {
+    assert.equal(analysisForHistory(item), item.analysis, `${item.name} 应直接返回快照而非重建`);
+  }
+});
+
+test('analysisForHistory: 不同历史条目的物种清单各不相同（回放不再都是"最后一次"）', () => {
+  const names = HISTORY.map((h) => analysisForHistory(h).species.map((s) => s.name).join('|'));
+  assert.equal(new Set(names).size, HISTORY.length, `各条 species 应不同，实际: ${names.join(' ; ')}`);
 });
 
 test('gradeOf: 分级边界正确（70 宜居 / 50 一般 / <50 受压）', () => {

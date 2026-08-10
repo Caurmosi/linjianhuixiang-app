@@ -210,6 +210,32 @@ def test_analyze_history_persisted(client):
     assert lv["score"] == r.json()["livability"]["score"]
 
 
+def test_analyze_history_carries_full_snapshot(client):
+    """analyze 后 history 条目应携带完整 analysis 快照，且与本次分析结果一致（关键字段抽查）。"""
+    wav = synth.to_wav_bytes(synth.make_bird_sample(duration=10.0))
+    r = _analyze(client, wav, "快照测试.wav")
+    assert r.status_code == 200, r.text
+    result = r.json()
+
+    hist = client.get("/api/history").json()
+    item = next(h for h in hist if h["name"] == "快照测试.wav")
+    analysis = item.get("analysis")
+    assert isinstance(analysis, dict), "history 条目应携带 analysis 完整快照"
+
+    # 关键字段与 analyze 返回一致
+    assert analysis["recording"] == result["recording"]
+    assert analysis["speciesCount"] == result["speciesCount"]
+    assert analysis["species"] == result["species"]
+    assert analysis["heatmap"] == result["heatmap"]
+    assert analysis["waveform"] == result["waveform"]
+    assert analysis["segmentPoints"] == result["segmentPoints"]
+    assert analysis["livability"]["score"] == result["livability"]["score"]
+    assert analysis["livability"]["noise"] == result["livability"]["noise"]
+    # 汇总字段与快照自洽
+    assert item["species"] == analysis["speciesCount"]
+    assert item["score"] == analysis["livability"]["score"]
+
+
 # ---------------------------------------------------------------------------
 # 错误路径
 # ---------------------------------------------------------------------------

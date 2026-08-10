@@ -197,8 +197,13 @@ export async function buildAnalysis(name, overrides = {}) {
   return composeAnalysis(name, parts, overrides || {});
 }
 
-/** 由历史记录条目构建分析结果（组合端点 + 历史条目覆盖，async） */
+/** 由历史记录条目构建分析结果（async）：
+ *  - 优先返回 item.analysis 完整快照（物种/波形/指数/热力图/分段样点随记录恢复，不再拉取"最近一次"端点）；
+ *  - 旧记录无快照时降级组合端点 + 历史条目覆盖。 */
 export async function analysisForHistory(item) {
+  if (item && item.analysis && typeof item.analysis === 'object') {
+    return item.analysis;
+  }
   const parts = await fetchBaselineParts();
   const g = gradeOf(item.score);
   const lv = {

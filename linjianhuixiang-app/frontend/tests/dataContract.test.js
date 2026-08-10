@@ -107,6 +107,17 @@ describe('数据契约：指数/地图/历史字段', () => {
     }
   });
 
+  test('HistoryItem 契约：analysis 完整快照（对象，含 species 数组且 speciesCount 与条目自洽）', () => {
+    for (const h of HISTORY) {
+      assert.ok(h.analysis && typeof h.analysis === 'object', `${h.name} 缺少 analysis 快照`);
+      assert.ok(Array.isArray(h.analysis.species), `${h.name} analysis.species 应为数组`);
+      assert.ok(h.analysis.species.length > 0, `${h.name} analysis.species 不应为空`);
+      assert.equal(h.analysis.recording, h.name, `${h.name} analysis.recording 应与条目一致`);
+      assert.equal(h.analysis.speciesCount, h.species, `${h.name} analysis.speciesCount 应与条目自洽`);
+      assert.ok(h.analysis.livability && typeof h.analysis.livability.score === 'number', `${h.name} analysis.livability 应为对象`);
+    }
+  });
+
   test('LIVABILITY 含 grade/gradeEn 展示字段', () => {
     for (const f of ['grade', 'gradeEn']) {
       assert.ok(f in LIVABILITY, `LIVABILITY 缺少字段 ${f}`);

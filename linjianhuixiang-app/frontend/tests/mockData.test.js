@@ -175,6 +175,21 @@ describe('HISTORY 历史记录结构', () => {
       assert.equal(typeof h.duration, 'string');
     }
   });
+
+  test('每条携带 analysis 完整快照（对象，speciesCount 与条目自洽）', () => {
+    for (const h of HISTORY) {
+      assert.ok(h.analysis && typeof h.analysis === 'object', `${h.name} 缺少 analysis 快照`);
+      assert.equal(h.analysis.recording, h.name);
+      assert.equal(h.analysis.speciesCount, h.species);
+      assert.ok(Array.isArray(h.analysis.species) && h.analysis.species.length > 0);
+      assert.equal(h.analysis.livability.score, h.score);
+    }
+  });
+
+  test('各条 analysis 的物种清单互不相同', () => {
+    const names = HISTORY.map((h) => h.analysis.species.map((s) => s.name).join('|'));
+    assert.equal(new Set(names).size, HISTORY.length, `各条 species 应不同: ${names.join(' ; ')}`);
+  });
 });
 
 describe('buildAnalysis 分析结果构建', () => {
@@ -216,6 +231,12 @@ describe('analysisForHistory 历史回放构建', () => {
     assert.equal(a.livability.noise, item.noise);
     assert.equal(a.livability.bio, item.bio);
     assert.equal(a.livability.sound, item.sound);
+  });
+
+  test('优先返回 item.analysis 完整快照（同一引用，不再重建默认数据）', () => {
+    for (const item of HISTORY) {
+      assert.equal(analysisForHistory(item), item.analysis, `${item.name} 应直接返回快照`);
+    }
   });
 });
 

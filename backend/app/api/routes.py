@@ -233,6 +233,8 @@ async def analyze(
             "bio": lv["bio"],
             "sound": lv["sound"],
             "created_at": _now_iso(),
+            # 完整分析快照：历史回放优先恢复（含 species/indices/heatmap/waveform/segmentPoints 等）
+            "analysis": result,
         }
     )
     return result
