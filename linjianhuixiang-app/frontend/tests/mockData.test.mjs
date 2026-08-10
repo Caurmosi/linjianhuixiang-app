@@ -16,6 +16,7 @@ import {
   GREEN_SPACES,
   SUGGESTIONS,
   HISTORY,
+  REGIONS,
   buildAnalysis,
   analysisForHistory,
   gradeOf,
@@ -175,6 +176,38 @@ test('HISTORY: 每条携带 analysis 完整快照，speciesCount 与条目自洽
     assert.ok(Array.isArray(h.analysis.species) && h.analysis.species.length > 0, `${h.name} analysis.species 应为非空数组`);
     assert.equal(h.analysis.livability.score, h.score);
   }
+});
+
+test('HISTORY: 每条含 created_at（ISO 日期），且日期互不相同（最近/更早分组可见）', () => {
+  const dates = new Set();
+  for (const h of HISTORY) {
+    assert.ok(typeof h.created_at === 'string' && h.created_at.length > 0, `${h.name} 缺少 created_at`);
+    assert.match(h.created_at, /^\d{4}-\d{2}-\d{2}/, `${h.name} created_at 应为 ISO 日期`);
+    dates.add(h.created_at.slice(0, 10));
+  }
+  assert.ok(dates.size > 1, '演示历史日期应不全部相同');
+});
+
+test('REGIONS: 3 条地区记录（2 个地区，同名归组），字段完整且 score 与快照一致', () => {
+  assert.equal(REGIONS.length, 3);
+  const ids = new Set();
+  for (const r of REGIONS) {
+    assert.ok(Number.isInteger(r.id) && r.id > 0, `id 应为正整数: ${r.id}`);
+    assert.ok(!ids.has(r.id), `id 应唯一: ${r.id}`);
+    ids.add(r.id);
+    assert.ok(r.name && typeof r.name === 'string' && r.name.length > 0, `name 非空: ${r.name}`);
+    assert.ok(typeof r.created_at === 'string' && r.created_at.length > 0, `created_at 非空: ${r.name}`);
+    assert.match(r.created_at, /^\d{4}-\d{2}-\d{2}/, `created_at 应为 ISO 日期: ${r.created_at}`);
+    assert.ok(r.detail && typeof r.detail === 'object', `${r.name} detail 应为对象`);
+    assert.equal(typeof r.detail.livability.score, 'number', `${r.name} detail.livability.score 应为数值`);
+    assert.equal(typeof r.detail.livability.noise, 'number', `${r.name} detail.livability.noise 应为数值`);
+    assert.equal(r.score, r.detail.livability.score, `${r.name} score 应等于 detail.livability.score`);
+    assert.ok(Array.isArray(r.detail.species) || r.detail.speciesCount >= 0, `${r.name} detail 应含物种信息`);
+  }
+  // 归组演示：中山公园 2 条（趋势可比对）、滨江绿地 1 条（单点提示）
+  const names = REGIONS.map((r) => r.name);
+  assert.equal(names.filter((n) => n === '中山公园').length, 2, '中山公园应有 2 条');
+  assert.equal(names.filter((n) => n === '滨江绿地').length, 1, '滨江绿地应有 1 条');
 });
 
 test('buildAnalysis: 默认构建完整分析结果，覆盖所有屏幕引用字段', () => {

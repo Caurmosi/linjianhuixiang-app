@@ -15,6 +15,7 @@ import {
   GREEN_SPACES,
   SUGGESTIONS,
   HISTORY,
+  REGIONS,
   buildAnalysis,
   analysisForHistory,
   gradeOf,
@@ -189,6 +190,41 @@ describe('HISTORY 历史记录结构', () => {
   test('各条 analysis 的物种清单互不相同', () => {
     const names = HISTORY.map((h) => h.analysis.species.map((s) => s.name).join('|'));
     assert.equal(new Set(names).size, HISTORY.length, `各条 species 应不同: ${names.join(' ; ')}`);
+  });
+
+  test('每条含 created_at（ISO 日期，YYYY-MM-DD 前缀）', () => {
+    for (const h of HISTORY) {
+      assert.ok(typeof h.created_at === 'string' && h.created_at.length > 0, `${h.name} 缺少 created_at`);
+      assert.match(h.created_at, /^\d{4}-\d{2}-\d{2}/, `${h.name} created_at 应为 ISO 日期: ${h.created_at}`);
+    }
+  });
+});
+
+describe('REGIONS 地区记录结构', () => {
+  test('3 条记录，字段完整（id/name/created_at/detail/score），score 与快照一致', () => {
+    assert.equal(REGIONS.length, 3);
+    const ids = new Set();
+    for (const r of REGIONS) {
+      assert.ok(Number.isInteger(r.id) && r.id > 0);
+      assert.ok(!ids.has(r.id), `id 应唯一: ${r.id}`);
+      ids.add(r.id);
+      assert.ok(r.name && typeof r.name === 'string' && r.name.length > 0, `name 非空: ${r.name}`);
+      assert.ok(r.created_at && typeof r.created_at === 'string', `created_at 应为字符串: ${r.created_at}`);
+      assert.match(r.created_at, /^\d{4}-\d{2}-\d{2}/, `created_at 应为 ISO 日期: ${r.created_at}`);
+      assert.ok(r.detail && typeof r.detail === 'object', `${r.name} detail 应为对象`);
+      assert.equal(typeof r.detail.livability.score, 'number', `${r.name} detail.livability.score 应为数值`);
+      assert.equal(typeof r.detail.livability.noise, 'number', `${r.name} detail.livability.noise 应为数值`);
+      assert.equal(r.score, r.detail.livability.score, `${r.name} score 应等于 detail.livability.score`);
+    }
+  });
+
+  test('同名归组演示：中山公园 2 条（趋势可比对）、滨江绿地 1 条（单点提示）', () => {
+    const byName = REGIONS.reduce((acc, r) => {
+      acc[r.name] = (acc[r.name] || 0) + 1;
+      return acc;
+    }, {});
+    assert.equal(byName['中山公园'], 2);
+    assert.equal(byName['滨江绿地'], 1);
   });
 });
 

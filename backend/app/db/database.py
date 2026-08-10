@@ -1,9 +1,10 @@
 """
 database.py —— SQLite 持久化
 
-两张表：
+三张表：
   - history：历史记录（前端契约字段 + created_at）
   - analyses：完整分析结果（detail_json），供 GET /api/* 返回"最近一次分析"视图
+  - region_records：地区记录（名称 + 完整 summary 快照），支持删除 / 重命名 / 同名归组趋势对比
 线程安全：单连接 + 全局锁（FastAPI 同步端点运行在线程池）。
 """
 from __future__ import annotations
@@ -48,6 +49,12 @@ class Database:
                 CREATE TABLE IF NOT EXISTS analyses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     recording TEXT NOT NULL,
+                    detail_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS region_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
                     detail_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
@@ -109,6 +116,78 @@ class Database:
                 item["analysis"] = None
             items.append(item)
         return items
+
+    def delete_history(self, id: int) -> bool:
+        """按 id 删除历史记录；存在返回 True，不存在返回 False。"""
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM history WHERE id = ?", (int(id),))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    # ---------------------------------------------------------------- 地区记录
+    def insert_region(self, name: str, detail: dict) -> dict:
+        """保存一条地区记录（detail 为完整 summary 快照），返回 {id, name, created_at}。"""
+        with self._lock:
+            created_at = _now()
+            cur = self._conn.execute(
+                "INSERT INTO region_records (name, detail_json, created_at) VALUES (?, ?, ?)",
+                (str(name), json.dumps(detail, ensure_ascii=False), created_at),
+            )
+            self._conn.commit()
+            return {"id": int(cur.lastrowid), "name": str(name), "created_at": created_at}
+
+    def list_regions(self) -> list[dict]:
+        """返回全部地区记录 [{id, name, created_at, detail, score}]，score 由 detail.livability.score 提取。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, name, created_at, detail_json FROM region_records ORDER BY id"
+            ).fetchall()
+        items = []
+        for r in rows:
+            detail = None
+            try:
+                detail = json.loads(r["detail_json"]) if r["detail_json"] else None
+            except (json.JSONDecodeError, TypeError):
+                detail = None
+            score = None
+            if isinstance(detail, dict) and isinstance(detail.get("livability"), dict):
+                s = detail["livability"].get("score")
+                if isinstance(s, int):
+                    score = s
+            items.append(
+                {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "created_at": r["created_at"],
+                    "detail": detail,
+                    "score": score,
+                }
+            )
+        return items
+
+    def get_region(self, id: int) -> dict | None:
+        """按 id 取单条地区记录；不存在返回 None。"""
+        for item in self.list_regions():
+            if item["id"] == int(id):
+                return item
+        return None
+
+    def delete_region(self, id: int) -> bool:
+        """按 id 删除地区记录；存在返回 True，不存在返回 False。"""
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM region_records WHERE id = ?", (int(id),))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def rename_region(self, id: int, new_name: str) -> bool:
+        """重命名地区记录；存在返回 True，不存在返回 False。"""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE region_records SET name = ? WHERE id = ?",
+                (str(new_name), int(id)),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
 
     # ------------------------------------------------------------------ 分析
     def save_analysis(self, detail: dict) -> int:

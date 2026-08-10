@@ -31,6 +31,10 @@ const initialState = {
   // history 懒加载：mock 模式直接取演示数据（无网络）；api 模式启动时置空，
   // 首次进入历史页才发起请求（SET_HISTORY 写入），启动路径 0 网络请求
   history: isMockMode() ? getHistory() : [],
+  // 地区记录：进入地图页时加载（SET_REGIONS 写入）；mock 模式也从内存态仓库取数
+  regions: [],
+  // 地区详情页当前查看的地区名（RegionScreen 按名称归组过滤）
+  activeRegionName: null,
   threshold: 0.5, // 置信度阈值（0.30 - 0.90）
   highpass: true, // 高通滤波降噪
   realtime: false, // 实时录音分析
@@ -146,6 +150,19 @@ function reducer(state, action) {
     case 'SET_HISTORY':
       // 懒加载写入历史列表（首次进入历史页 fetch 后回填；失败置空数组）
       return { ...state, history: Array.isArray(action.items) ? action.items : [] };
+
+    case 'SET_REGIONS':
+      // 写入地区记录列表（进入地图页 / 保存 / 删除 / 重命名后刷新）
+      return { ...state, regions: Array.isArray(action.items) ? action.items : [] };
+
+    case 'OPEN_REGION':
+      // 进入地区详情：记录地区名（同名记录归组展示 / 趋势对比）
+      return {
+        ...state,
+        screenStack: [...state.screenStack, state.screen],
+        screen: 'region',
+        activeRegionName: action.name,
+      };
 
     case 'SET_THRESHOLD':
       // 钳制到 [0.30, 0.90]，与 UI 滑杆范围一致（A4）

@@ -120,6 +120,7 @@ export const HISTORY = [
     noise: 34,
     bio: 76,
     sound: 60,
+    created_at: '2026-08-05T06:40:00+00:00',
     analysis: buildAnalysis('中山公园_晨.wav', {
       speciesCount: 9,
       species: SPECIES,
@@ -135,6 +136,7 @@ export const HISTORY = [
     noise: 51,
     bio: 62,
     sound: 45,
+    created_at: '2026-07-28T12:10:00+00:00',
     analysis: buildAnalysis('滨江绿地_午后.mp3', {
       speciesCount: 6,
       species: SPECIES.slice(0, 6),
@@ -150,10 +152,50 @@ export const HISTORY = [
     noise: 22,
     bio: 88,
     sound: 74,
+    created_at: '2026-07-15T18:30:00+00:00',
     analysis: buildAnalysis('西郊森林公园_黄昏.wav', {
       speciesCount: 12,
       species: [...SPECIES.slice(3), ...SPECIES.slice(0, 3)], // 黄昏物种置前，清单与晨间不同
       livability: { score: 82, noise: 22, bio: 88, sound: 74 },
+    }),
+  },
+];
+
+/**
+ * 地区记录演示数据（2 个地区各 1~2 条，detail 为 buildAnalysis 形状的完整 summary 快照）。
+ *  - 中山公园 2 条（2026-07-20 / 2026-08-01）→ 趋势折线图有 ≥2 点可比对；
+ *  - 滨江绿地 1 条（2026-07-25）→ 演示「至少 2 次测量才能对比趋势」提示。
+ * score 字段与 detail.livability.score 保持一致（后端列表接口同样提取）。
+ */
+export const REGIONS = [
+  {
+    id: 1,
+    name: '中山公园',
+    created_at: '2026-07-20T08:00:00+00:00',
+    score: 62,
+    detail: buildAnalysis('中山公园_晨.wav', {
+      speciesCount: 7,
+      livability: { score: 62, noise: 41, bio: 70, sound: 55 },
+    }),
+  },
+  {
+    id: 2,
+    name: '中山公园',
+    created_at: '2026-08-01T07:30:00+00:00',
+    score: 74,
+    detail: buildAnalysis('中山公园_复测.wav', {
+      speciesCount: 9,
+      livability: { score: 74, noise: 28, bio: 82, sound: 68 },
+    }),
+  },
+  {
+    id: 3,
+    name: '滨江绿地',
+    created_at: '2026-07-25T09:15:00+00:00',
+    score: 47,
+    detail: buildAnalysis('滨江绿地_午后.mp3', {
+      speciesCount: 5,
+      livability: { score: 47, noise: 58, bio: 55, sound: 40 },
     }),
   },
 ];
@@ -208,6 +250,13 @@ export function analysisForHistory(item) {
     speciesCount: item.species,
     livability: { score: item.score, noise: item.noise, bio: item.bio, sound: item.sound },
   });
+}
+
+/** mock 本地删除历史记录：HISTORY 常量不可变，此处为纯函数占位（repository 层在内存态实现真实删除） */
+export function deleteHistory() {
+  // repository.deleteHistory 在 mock 模式走内存态 regionStore 逻辑；
+  // 历史删除由 appStore 持有快照，UI 删除后重新拉取列表，无需改动此处静态数据。
+  return { ok: true };
 }
 
 /**

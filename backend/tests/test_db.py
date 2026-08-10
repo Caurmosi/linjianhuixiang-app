@@ -149,3 +149,105 @@ def test_migration_adds_detail_json_to_legacy_table(tmp_path):
     assert items[0]["name"] == "new.wav"
     assert items[0]["analysis"]["speciesCount"] == 4
     db.close()
+
+
+# ---------------------------------------------------------------------------
+# 地区记录（region_records）
+# ---------------------------------------------------------------------------
+def _summary(score=70, noise=30, species=6):
+    return {
+        "recording": "综合.wav",
+        "speciesCount": species,
+        "livability": {"score": score, "noise": noise, "bio": 76, "sound": 60},
+        "species": [{"id": 1, "name": "白头鹎"}],
+    }
+
+
+def test_region_crud_roundtrip(tmp_path):
+    """insert_region → list_regions/get_region → rename → delete 全链路。"""
+    db = Database(tmp_path / "region.db")
+    row = db.insert_region("中山公园", _summary(score=70, noise=30))
+    assert row["id"] > 0
+    assert row["name"] == "中山公园"
+    assert row["created_at"]
+
+    # 同名第二条 → 归组依据
+    db.insert_region("中山公园", _summary(score=74, noise=28))
+    db.insert_region("滨江绿地", _summary(score=47, noise=58))
+
+    items = db.list_regions()
+    assert len(items) == 3
+    first = items[0]
+    assert first["name"] == "中山公园"
+    assert first["score"] == 70, "score 应从 detail.livability.score 提取"
+    assert first["detail"]["livability"]["score"] == 70
+    assert first["detail"]["speciesCount"] == 6
+    # created_at 非空（自动写入）
+    assert first["created_at"]
+
+    # get_region 命中 / 未命中
+    got = db.get_region(row["id"])
+    assert got is not None and got["name"] == "中山公园"
+    assert db.get_region(99999) is None
+
+    # rename
+    assert db.rename_region(row["id"], "森林公园") is True
+    assert db.get_region(row["id"])["name"] == "森林公园"
+    assert db.rename_region(99999, "x") is False
+
+    # delete
+    assert db.delete_region(row["id"]) is True
+    assert db.get_region(row["id"]) is None
+    assert db.delete_region(row["id"]) is False
+    assert len(db.list_regions()) == 2
+    db.close()
+
+
+def test_region_corrupt_detail_json_degrades(tmp_path):
+    """detail_json 非法 JSON 时解析为 None，score 为 None，不抛错。"""
+    db = Database(tmp_path / "corrupt_region.db")
+    row = db.insert_region("x", {"livability": {"score": 66}})
+    with db._lock:
+        db._conn.execute("UPDATE region_records SET detail_json = '{not json' WHERE id = ?", (row["id"],))
+        db._conn.commit()
+    item = db.get_region(row["id"])
+    assert item["detail"] is None
+    assert item["score"] is None
+    db.close()
+
+
+def test_delete_history_by_id(tmp_path):
+    """delete_history：按 id 删除，存在 True / 不存在 False。"""
+    db = Database(tmp_path / "del_history.db")
+    row = db.insert_history(
+        {
+            "name": "a.wav",
+            "species": 2,
+            "score": 60,
+            "duration": "1:00",
+            "noise": 40,
+            "bio": 70,
+            "sound": 55,
+            "analysis": {"recording": "a.wav", "speciesCount": 2},
+        }
+    )
+    db.insert_history(
+        {
+            "name": "b.wav",
+            "species": 3,
+            "score": 70,
+            "duration": "2:00",
+            "noise": 30,
+            "bio": 80,
+            "sound": 65,
+            "analysis": {"recording": "b.wav", "speciesCount": 3},
+        }
+    )
+    assert len(db.list_history()) == 2
+    assert db.delete_history(row["id"]) is True, "存在的 id 应删除成功"
+    remaining = db.list_history()
+    assert len(remaining) == 1
+    assert remaining[0]["name"] == "b.wav"
+    assert db.delete_history(row["id"]) is False, "已删除的 id 再次删除应返回 False"
+    assert db.delete_history(99999) is False, "不存在的 id 应返回 False"
+    db.close()

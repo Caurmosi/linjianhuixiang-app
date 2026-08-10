@@ -61,6 +61,26 @@ class HistoryItem(BaseModel):
     analysis: dict | None = None
 
 
+class RegionRecord(BaseModel):
+    """地区记录（地区记录列表 / 单条），detail 为完整 summary 快照，score 由 detail.livability.score 提取。"""
+    id: int
+    name: str
+    created_at: str
+    detail: dict | None = None
+    score: int | None = None
+
+
+class RegionCreate(BaseModel):
+    """保存地区记录请求体：name 地区名 + summary 综合摘要完整快照。"""
+    name: str = Field(..., min_length=1, description="地区名称，如同名视为同一地区")
+    summary: dict
+
+
+class RegionRename(BaseModel):
+    """重命名地区记录请求体。"""
+    name: str = Field(..., min_length=1, description="新地区名称")
+
+
 class AnalysisResult(BaseModel):
     recording: str
     species: list[Species]

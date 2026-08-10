@@ -123,6 +123,68 @@ def get_history(limit: int = Query(100, ge=1, le=500)) -> list[dict]:
     return database.get_db().list_history(limit=limit)
 
 
+@router.delete("/api/history/{item_id}", status_code=200, tags=["data"])
+def delete_history(item_id: int) -> dict:
+    """删除一条历史记录；id 不存在返回 404。"""
+    if not database.get_db().delete_history(item_id):
+        raise HTTPException(status_code=404, detail=f"历史记录不存在：id={item_id}")
+    return {"ok": True, "id": item_id}
+
+
+# ---------------------------------------------------------------------------
+# 地区记录
+# ---------------------------------------------------------------------------
+def _region_score(detail: dict | None) -> int | None:
+    if not isinstance(detail, dict):
+        return None
+    lv = detail.get("livability")
+    s = lv.get("score") if isinstance(lv, dict) else None
+    return s if isinstance(s, int) else None
+
+
+def _region_record(item: dict) -> dict:
+    """组合地区记录输出：detail 完整快照 + score 提取（便于列表展示）。"""
+    return {
+        "id": item["id"],
+        "name": item["name"],
+        "created_at": item["created_at"],
+        "detail": item["detail"],
+        "score": item.get("score", _region_score(item.get("detail"))),
+    }
+
+
+@router.get("/api/regions", response_model=list[schemas.RegionRecord], tags=["data"])
+def get_regions() -> list[dict]:
+    return [_region_record(r) for r in database.get_db().list_regions()]
+
+
+@router.post("/api/regions", response_model=schemas.RegionRecord, status_code=201, tags=["data"])
+def create_region(payload: schemas.RegionCreate) -> dict:
+    """保存地区记录：name（同名自动归组）+ summary 完整快照。"""
+    row = database.get_db().insert_region(payload.name, payload.summary)
+    record = database.get_db().get_region(row["id"])
+    assert record is not None  # 刚插入必存在
+    return _region_record(record)
+
+
+@router.delete("/api/regions/{item_id}", status_code=200, tags=["data"])
+def delete_region(item_id: int) -> dict:
+    """删除一条地区记录；id 不存在返回 404。"""
+    if not database.get_db().delete_region(item_id):
+        raise HTTPException(status_code=404, detail=f"地区记录不存在：id={item_id}")
+    return {"ok": True, "id": item_id}
+
+
+@router.patch("/api/regions/{item_id}", response_model=schemas.RegionRecord, tags=["data"])
+def rename_region(item_id: int, payload: schemas.RegionRename) -> dict:
+    """重命名地区记录；id 不存在返回 404。"""
+    if not database.get_db().rename_region(item_id, payload.name):
+        raise HTTPException(status_code=404, detail=f"地区记录不存在：id={item_id}")
+    record = database.get_db().get_region(item_id)
+    assert record is not None
+    return _region_record(record)
+
+
 # ---------------------------------------------------------------------------
 # 音频分析
 # ---------------------------------------------------------------------------

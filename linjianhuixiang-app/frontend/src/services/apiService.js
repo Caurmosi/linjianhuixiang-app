@@ -45,11 +45,11 @@ function reasonOf(e) {
 }
 
 /**
- * 异步请求（GET / POST multipart），fetch + AbortController 超时。
+ * 异步请求（GET / POST multipart / JSON / DELETE / PATCH），fetch + AbortController 超时。
  * 基地址在每次请求时动态解析（resolveApiBase）：设置页保存的 localStorage.ljx_api_base
  * 即时生效，无需重启 App（不再于模块加载时缓存）。
  * @param {string} path 如 /api/species
- * @param {object} options { method, formData, fn, timeoutMs }
+ * @param {object} options { method, formData, json, fn, timeoutMs }
  * @returns {Promise<any>} 解析后的 JSON
  * @throws 后端不可达 / 超时 / 非 JSON / HTTP 错误（均带语义与函数名）
  */
@@ -63,11 +63,13 @@ async function request(path, options = {}) {
   const url = base + path;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const hasJson = options.json !== undefined;
   let resp;
   try {
     resp = await fetch(url, {
       method: options.method || 'GET',
-      body: options.formData || undefined,
+      body: hasJson ? JSON.stringify(options.json) : options.formData || undefined,
+      headers: hasJson ? { 'Content-Type': 'application/json' } : undefined,
       signal: controller.signal,
     });
   } catch (e) {
@@ -178,6 +180,31 @@ export function getSuggestions() {
 /** 历史记录 */
 export function getHistory() {
   return request('/api/history', { fn: 'getHistory' });
+}
+
+/** 删除历史记录（DELETE /api/history/{id}） */
+export function deleteHistory(id) {
+  return request(`/api/history/${id}`, { method: 'DELETE', fn: 'deleteHistory' });
+}
+
+/** 地区记录列表（GET /api/regions） */
+export function getRegions() {
+  return request('/api/regions', { fn: 'getRegions' });
+}
+
+/** 保存地区记录（POST /api/regions，同名自动归组） */
+export function saveRegion(name, summary) {
+  return request('/api/regions', { method: 'POST', json: { name, summary }, fn: 'saveRegion' });
+}
+
+/** 删除地区记录（DELETE /api/regions/{id}） */
+export function deleteRegion(id) {
+  return request(`/api/regions/${id}`, { method: 'DELETE', fn: 'deleteRegion' });
+}
+
+/** 重命名地区记录（PATCH /api/regions/{id}） */
+export function renameRegion(id, name) {
+  return request(`/api/regions/${id}`, { method: 'PATCH', json: { name }, fn: 'renameRegion' });
 }
 
 /**

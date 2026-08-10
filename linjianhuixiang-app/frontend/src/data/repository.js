@@ -59,6 +59,69 @@ export function getHistory() {
   return useApi() ? apiService.getHistory() : mockData.HISTORY;
 }
 
+/** 删除历史记录（mock：本地过滤；api：DELETE /api/history/{id}） */
+export function deleteHistory(id) {
+  return useApi() ? apiService.deleteHistory(id) : mockData.deleteHistory(id);
+}
+
+// ---------------------------------------------------------------------------
+// 地区记录（region_records）
+//  - mock：模块内内存数组（从 mockData.REGIONS 深拷贝初始化，save/delete/rename 就地变更）
+//  - api：转发 apiService（POST/GET/DELETE/PATCH /api/regions）
+// ---------------------------------------------------------------------------
+let _regions = null;
+
+/** mock 内存态地区记录仓库（惰性深拷贝演示数据，避免污染 mockData.REGIONS） */
+function regionStore() {
+  if (_regions === null) {
+    _regions = mockData.REGIONS.map((r) => JSON.parse(JSON.stringify(r)));
+  }
+  return _regions;
+}
+
+/** 地区记录列表（mock 返回副本，防外改） */
+export function getRegions() {
+  return useApi() ? apiService.getRegions() : regionStore().slice();
+}
+
+/** 保存地区记录：同名自动归组；返回新记录 {id, name, created_at, detail, score} */
+export function saveRegion(name, summary) {
+  if (useApi()) return apiService.saveRegion(name, summary);
+  const store = regionStore();
+  const nextId = store.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+  const lv = summary && summary.livability;
+  const record = {
+    id: nextId,
+    name: String(name),
+    created_at: new Date().toISOString(),
+    detail: summary,
+    score: lv && typeof lv.score === 'number' ? lv.score : null,
+  };
+  store.push(record);
+  return { ...record };
+}
+
+/** 删除地区记录（mock：本地过滤；不存在返回 false） */
+export function deleteRegion(id) {
+  if (useApi()) return apiService.deleteRegion(id);
+  const store = regionStore();
+  const idx = store.findIndex((r) => r.id === id);
+  if (idx === -1) return false;
+  store.splice(idx, 1);
+  return { ok: true, id };
+}
+
+/** 重命名地区记录（mock：替换记录 name；不存在返回 false） */
+export function renameRegion(id, name) {
+  if (useApi()) return apiService.renameRegion(id, name);
+  const store = regionStore();
+  const idx = store.findIndex((r) => r.id === id);
+  if (idx === -1) return false;
+  const updated = { ...store[idx], name: String(name) };
+  store[idx] = updated;
+  return { ...updated };
+}
+
 /** 根据录音名 + 覆盖项构建分析结果（转发 mockData 实现） */
 export function buildAnalysis(name, overrides = {}) {
   return useApi() ? apiService.buildAnalysis(name, overrides) : mockData.buildAnalysis(name, overrides);

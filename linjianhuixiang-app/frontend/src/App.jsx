@@ -19,6 +19,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import MethodScreen from './screens/MethodScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import SampleScreen from './screens/SampleScreen';
+import RegionScreen from './screens/RegionScreen';
 
 const SCREENS = {
   home: HomeScreen,
@@ -33,6 +34,7 @@ const SCREENS = {
   method: MethodScreen,
   history: HistoryScreen,
   sample: SampleScreen,
+  region: RegionScreen,
 };
 
 function ActiveScreen() {

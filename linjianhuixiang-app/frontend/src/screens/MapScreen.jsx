@@ -2,8 +2,10 @@
  * MapScreen.jsx
  * 声景地图：
  *  - 有 batchSummary（多录音聚合综合）→ 综合视图：综合宜居度大卡（Ring）+ 物种清单（按出现次数）
- *    + 时间热力图（聚合平均）+ 空间分布（mapPoints 每段一个点），并提供「清除综合，返回首页」；
- *  - 无 batchSummary → 原有单点分析视图：分段切换「时间热力图 / 空间分布」，多绿地样点对比。
+ *    + 时间热力图（聚合平均）+ 空间分布（mapPoints 每段一个点），并提供「保存地区记录」
+ *    （命名输入 → saveRegion → 同名自动归组）+「清除综合，返回首页」；
+ *  - 无 batchSummary → 原有单点分析视图：分段切换「时间热力图 / 空间分布」，多绿地样点对比；
+ *  - 两种视图下均展示「地区记录」区块：按名称分组、组内按时间升序，点击进入地区详情（趋势对比）。
  */
 import { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
@@ -13,15 +15,49 @@ import Chip from '../components/ui/Chip';
 import Ring from '../components/Ring';
 import HeatmapChart from '../components/charts/HeatmapChart';
 import MapChart from '../components/charts/MapChart';
-import { getGreenSpaces, gradeOf, livabilityDesc } from '../data/repository';
+import { getGreenSpaces, getRegions, gradeOf, livabilityDesc, deleteRegion, saveRegion } from '../data/repository';
+import { formatISODate } from '../utils/dates';
+import { humanizeBackendError } from '../utils/errorText';
+import { IconChevronRight, IconTrash } from '../components/icons';
+
+/** 按名称归组地区记录：同名一组，组内按 created_at 时间升序，组间按名称排序 */
+function groupRegionsByName(regions) {
+  const map = new Map();
+  for (const r of regions) {
+    if (!r || !r.name) continue;
+    if (!map.has(r.name)) map.set(r.name, []);
+    map.get(r.name).push(r);
+  }
+  return [...map.entries()]
+    .map(([name, items]) => ({
+      name,
+      items: items.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || ''))),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+}
 
 export default function MapScreen() {
   const { state, dispatch } = useApp();
   const [seg, setSeg] = useState('heat');
   const [greenIndex, setGreenIndex] = useState(0);
   const [greenSpaces, setGreenSpaces] = useState([]);
+  // 地区记录：列表 + 保存命名面板 + 行删除二次确认
+  const regions = state.regions || [];
+  const [showSavePanel, setShowSavePanel] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [confirmRegionId, setConfirmRegionId] = useState(null);
   const a = state.analysis;
   const summary = state.batchSummary;
+
+  const loadRegions = async () => {
+    try {
+      const list = await Promise.resolve(getRegions());
+      dispatch({ type: 'SET_REGIONS', items: Array.isArray(list) ? list : [] });
+    } catch (err) {
+      dispatch({ type: 'SET_REGIONS', items: [] });
+    }
+  };
 
   // 异步加载多绿地数据（mock 同步返回；api 后端不可达降级空数组，守卫渲染防白屏）
   useEffect(() => {
@@ -33,10 +69,131 @@ export default function MapScreen() {
       .catch(() => {
         if (alive) setGreenSpaces([]);
       });
+    loadRegions();
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** 保存当前综合摘要为地区记录（同名自动归组） */
+  const saveCurrentSummary = async () => {
+    const name = saveName.trim();
+    if (!name) {
+      dispatch({ type: 'TOAST', message: '请输入地区名称' });
+      return;
+    }
+    setSaving(true);
+    try {
+      await Promise.resolve(saveRegion(name, summary));
+      dispatch({ type: 'TOAST', message: '地区记录已保存' });
+      setShowSavePanel(false);
+      setSaveName('');
+      await loadRegions();
+    } catch (err) {
+      const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
+      dispatch({ type: 'TOAST', message: `保存失败：${reason}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** 地区记录行删除：第一次确认态，第二次真正删除 */
+  const startDeleteRegion = (e, r) => {
+    e.stopPropagation();
+    setConfirmRegionId(confirmRegionId === r.id ? null : r.id);
+  };
+
+  const confirmDeleteRegion = async (e, r) => {
+    e.stopPropagation();
+    try {
+      await Promise.resolve(deleteRegion(r.id));
+      dispatch({ type: 'TOAST', message: '已删除该条地区记录' });
+      setConfirmRegionId(null);
+      await loadRegions();
+    } catch (err) {
+      const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
+      dispatch({ type: 'TOAST', message: `删除失败：${reason}` });
+      setConfirmRegionId(null);
+    }
+  };
+
+  const openRegion = (name) => {
+    dispatch({ type: 'OPEN_REGION', name });
+  };
+
+  /** 地区记录区块（两种视图共用）：按名称分组、组内按时间升序 */
+  const renderRegionBlock = () => {
+    if (regions.length === 0) return null;
+    const groups = groupRegionsByName(regions);
+    return (
+      <div className="mt-5">
+        <div className="eyebrow mb-2.5">地区记录</div>
+        {groups.map((g) => (
+          <div key={g.name} className="region-group">
+            <button className="region-group-head" onClick={() => openRegion(g.name)}>
+              <b>{g.name}</b>
+              <span className="region-count">{g.items.length} 次测量</span>
+              <IconChevronRight size={15} />
+            </button>
+            {g.items.map((r) => (
+              <div key={r.id} className="region-row" onClick={() => openRegion(g.name)}>
+                <span className="region-date">{formatISODate(r.created_at)}</span>
+                <span className="region-score">宜居度 {r.score != null ? r.score : '—'}</span>
+                {confirmRegionId === r.id ? (
+                  <button
+                    className="hist-del hist-del-confirm"
+                    onClick={(e) => confirmDeleteRegion(e, r)}
+                  >
+                    确认删除？
+                  </button>
+                ) : (
+                  <button
+                    className="hist-del"
+                    aria-label="删除地区记录"
+                    onClick={(e) => startDeleteRegion(e, r)}
+                  >
+                    <IconTrash size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  /** 保存地区记录命名面板（prompt 式自绘小面板） */
+  const renderSavePanel = () => {
+    if (!showSavePanel) return null;
+    return (
+      <div className="save-panel-mask" onClick={() => setShowSavePanel(false)}>
+        <div className="save-panel" onClick={(e) => e.stopPropagation()}>
+          <h4>保存为地区记录</h4>
+          <p>输入地区名称，同名记录将自动归组（如「中山公园」）</p>
+          <input
+            autoFocus
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveCurrentSummary();
+            }}
+            placeholder="地区名称"
+            className="save-panel-input"
+          />
+          <div className="save-panel-actions">
+            <Button variant="ghost" onClick={() => setShowSavePanel(false)}>
+              取消
+            </Button>
+            <Button variant="primary" onClick={saveCurrentSummary} disabled={saving}>
+              {saving ? '保存中…' : '保存'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   /** 综合视图：多录音聚合摘要 */
   if (summary) {
@@ -137,11 +294,22 @@ export default function MapScreen() {
           </div>
         )}
 
+        {/* 保存地区记录 */}
+        <div className="mt-4">
+          <Button variant="primary" onClick={() => setShowSavePanel(true)}>
+            保存地区记录
+          </Button>
+        </div>
+
+        {renderRegionBlock()}
+
         <div className="mt-4">
           <Button variant="ghost" onClick={clearBatch}>
             清除综合，返回首页
           </Button>
         </div>
+
+        {renderSavePanel()}
       </div>
     );
   }
@@ -219,6 +387,8 @@ export default function MapScreen() {
           </div>
         </div>
       )}
+
+      {renderRegionBlock()}
     </div>
   );
 }

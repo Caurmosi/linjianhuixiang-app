@@ -12,6 +12,7 @@ import {
   INDICES,
   LIVABILITY,
   HISTORY,
+  REGIONS,
   buildAnalysis,
 } from '../src/data/mockData.js';
 
@@ -116,6 +117,37 @@ describe('数据契约：指数/地图/历史字段', () => {
       assert.equal(h.analysis.speciesCount, h.species, `${h.name} analysis.speciesCount 应与条目自洽`);
       assert.ok(h.analysis.livability && typeof h.analysis.livability.score === 'number', `${h.name} analysis.livability 应为对象`);
     }
+  });
+
+  test('HistoryItem 契约：每条含 created_at（YYYY-MM-DD 前缀的 ISO 时间），供日期显示', () => {
+    assert.ok(HISTORY.length > 0, '演示历史不应为空');
+    for (const h of HISTORY) {
+      assert.ok(typeof h.created_at === 'string' && h.created_at.length > 0, `${h.name} 缺少 created_at`);
+      assert.match(h.created_at, /^\d{4}-\d{2}-\d{2}/, `${h.name} created_at 应为 ISO 日期：${h.created_at}`);
+    }
+    // 演示日期互不相同，保证列表「最近分析 / 更早」分组有日期可见
+    const dates = new Set(HISTORY.map((h) => h.created_at.slice(0, 10)));
+    assert.ok(dates.size > 1, '演示历史日期应不全部相同');
+  });
+
+  test('RegionRecord 契约：id/name/created_at/detail/score 均存在，score 与 detail.livability.score 一致', () => {
+    assert.ok(REGIONS.length >= 3, `演示地区记录应 ≥3 条，实际 ${REGIONS.length}`);
+    for (const r of REGIONS) {
+      for (const f of ['id', 'name', 'created_at', 'detail', 'score']) {
+        assert.ok(f in r, `地区记录缺少字段 ${f}`);
+      }
+      assert.ok(r.detail && typeof r.detail === 'object', `${r.name} detail 应为对象`);
+      assert.ok(r.detail.livability && typeof r.detail.livability.score === 'number', `${r.name} detail.livability.score 应为数值`);
+      assert.equal(r.score, r.detail.livability.score, `${r.name} score 应等于 detail.livability.score`);
+      assert.match(r.created_at, /^\d{4}-\d{2}-\d{2}/, `${r.name} created_at 应为 ISO 日期：${r.created_at}`);
+      assert.ok(r.detail.speciesCount >= 0 || Array.isArray(r.detail.species), `${r.name} detail 应含物种信息`);
+    }
+  });
+
+  test('RegionRecord 契约：同名归组演示 —— 中山公园 2 条、滨江绿地 1 条', () => {
+    const names = REGIONS.map((r) => r.name);
+    assert.equal(names.filter((n) => n === '中山公园').length, 2, '中山公园应有 2 条记录（趋势可对比）');
+    assert.equal(names.filter((n) => n === '滨江绿地').length, 1, '滨江绿地应有 1 条记录（演示单点提示）');
   });
 
   test('LIVABILITY 含 grade/gradeEn 展示字段', () => {
