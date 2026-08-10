@@ -148,3 +148,62 @@ export function fixedPoint(points, idx, loc) {
 
 /** 默认中心：北京市天安门附近（GCJ-02） */
 export const DEFAULT_CENTER = [116.397428, 39.90923];
+
+/* ============================================================
+ * WGS84 → GCJ-02（火星坐标系）纠偏
+ * Android 定位桥 getLocation() 返回 WGS84，而高德瓦片 / 搜索定位均为
+ * GCJ-02（火星坐标），直接混用会偏移数百米。聚合时对 GPS 点（from==='gps'）
+ * 应用本转换；手动选点 / 搜索定位坐标本身已是 GCJ-02，不再转换。
+ * 算法为业界通用「火星坐标」标准转换（含中国境外偏好转范围判断）。
+ * ============================================================ */
+const GCJ_PI = Math.PI;
+const GCJ_A = 6378245.0; // 长半轴
+const GCJ_EE = 0.00669342162296594323; // 偏心率平方
+
+/** 判断是否在中国境外（境外无偏转需求，直接返回原坐标） */
+function gcjOutOfChina(lng, lat) {
+  return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271;
+}
+
+/** 纬度偏移量辅助（火星算法） */
+function gcjTransformLat(x, y) {
+  let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  ret += ((20.0 * Math.sin(6.0 * x * GCJ_PI) + 20.0 * Math.sin(2.0 * x * GCJ_PI)) * 2.0) / 3.0;
+  ret += ((20.0 * Math.sin(y * GCJ_PI) + 40.0 * Math.sin((y / 3.0) * GCJ_PI)) * 2.0) / 3.0;
+  ret += ((160.0 * Math.sin((y / 12.0) * GCJ_PI) + 320 * Math.sin((y * GCJ_PI) / 30.0)) * 2.0) / 3.0;
+  return ret;
+}
+
+/** 经度偏移量辅助（火星算法） */
+function gcjTransformLng(x, y) {
+  let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += ((20.0 * Math.sin(6.0 * x * GCJ_PI) + 20.0 * Math.sin(2.0 * x * GCJ_PI)) * 2.0) / 3.0;
+  ret += ((20.0 * Math.sin(x * GCJ_PI) + 40.0 * Math.sin((x / 3.0) * GCJ_PI)) * 2.0) / 3.0;
+  ret += ((150.0 * Math.sin((x / 12.0) * GCJ_PI) + 300.0 * Math.sin((x / 30.0) * GCJ_PI)) * 2.0) / 3.0;
+  return ret;
+}
+
+/**
+ * WGS84 → GCJ-02（火星坐标）转换。
+ * @param {number} lng 经度（WGS84）
+ * @param {number} lat 纬度（WGS84）
+ * @returns {[number, number]} [gcjLng, gcjLat]；境外 / 非法输入返回原值（或 [NaN, NaN]）
+ */
+export function wgs84ToGcj02(lng, lat) {
+  const lngN = Number(lng);
+  const latN = Number(lat);
+  if (!Number.isFinite(lngN) || !Number.isFinite(latN)) return [NaN, NaN];
+  if (gcjOutOfChina(lngN, latN)) return [lngN, latN];
+
+  let dLat = gcjTransformLat(lngN - 105.0, latN - 35.0);
+  let dLng = gcjTransformLng(lngN - 105.0, latN - 35.0);
+  const radLat = (latN / 180.0) * GCJ_PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - GCJ_EE * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / (((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic)) * GCJ_PI);
+  dLng = (dLng * 180.0) / ((GCJ_A / sqrtMagic) * Math.cos(radLat) * GCJ_PI);
+  const mgLat = latN + dLat;
+  const mgLng = lngN + dLng;
+  return [mgLng, mgLat];
+}

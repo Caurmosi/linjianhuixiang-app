@@ -20,6 +20,7 @@ import {
   circleColorExpression,
   pickAmapTileUrl,
   fixedPoint,
+  wgs84ToGcj02,
   DEFAULT_CENTER,
 } from '../src/components/map/mapUtils.js';
 import * as repository from '../src/data/repository.js';
@@ -173,6 +174,88 @@ describe('fixedPoint（手动固定段坐标）', () => {
   });
 });
 
+describe('wgs84ToGcj02（WGS84 → GCJ-02 火星坐标纠偏）', () => {
+  test('北京坐标东北向偏移，量级约 +0.002~0.006 度，返回非空双数值数组', () => {
+    const [lng, lat] = wgs84ToGcj02(116.391, 39.907);
+    assert.ok(Number.isFinite(lng) && Number.isFinite(lat), '应返回 [lng, lat] 双数值数组');
+    assert.ok(lng > 116.391 && lat > 39.907, '北京 GPS 点应向东北偏移');
+    const dLng = lng - 116.391;
+    const dLat = lat - 39.907;
+    assert.ok(dLng > 0.002 && dLng < 0.01, `经度偏移应在约 +0.002~0.006 度，实际 ${dLng.toFixed(4)}`);
+    assert.ok(dLat > 0.001 && dLat < 0.01, `纬度偏移应在约 +0.001~0.006 度，实际 ${dLat.toFixed(4)}`);
+  });
+
+  test('境外坐标不偏转（返回原值）；非法输入返回 [NaN, NaN]；幂等不受字符串输入影响', () => {
+    assert.deepEqual(wgs84ToGcj02(0, 0), [0, 0], '境外（0,0）原样返回');
+    assert.deepEqual(wgs84ToGcj02('116.391', '39.907'), wgs84ToGcj02(116.391, 39.907), '数字字符串输入结果一致');
+    const bad = wgs84ToGcj02('x', 39.9);
+    assert.ok(Number.isNaN(bad[0]) && Number.isNaN(bad[1]), '非法输入返回 NaN 数组');
+  });
+});
+
+describe('MapCanvas 真机兼容（maplibre v3 + WebGL 双检测 + 去 glyphs/symbol）', () => {
+  const src = read('components/map/MapCanvas.jsx');
+
+  test('WebGL 检测同时覆盖 webgl2 / webgl / experimental-webgl（优先 webgl2）', () => {
+    assert.match(src, /canvas\.getContext\('webgl2'\)/, '优先探测 WebGL2');
+    assert.match(src, /canvas\.getContext\('webgl'\)/, '回退 WebGL1');
+    assert.match(src, /experimental-webgl/, '回退 experimental-webgl');
+  });
+
+  test('不再依赖 glyphs / symbol 标点层（demotiles 字体国内不可达致真机白屏）', () => {
+    assert.ok(!/glyphs:/.test(src), 'MapCanvas 不应再声明 glyphs 字段');
+    assert.ok(!/type: 'symbol'/.test(src), '不应再有 symbol label 层');
+    assert.ok(!/text-field/.test(src), '不应再有 text-field 布局');
+  });
+
+  test('标点名称改用 maplibregl.Marker（DOM 标签，不依赖 glyphs）', () => {
+    assert.match(src, /new Marker\(\{ element: el, anchor: 'bottom' \}\)/, '名称标签用 DOM Marker 元素');
+    assert.match(src, /syncLabelMarkers/, 'load 后同步名称标签');
+  });
+
+  test('map error 展示具体错误消息（err.error?.message 或 err.message 截断）', () => {
+    assert.match(src, /err\.error/, '读取 err.error 具体错误');
+    assert.match(src, /err\.message/, '回退 err.message');
+    assert.match(src, /setTileError\(errorTextOf\(err\)\)/, '浮层写入具体错误文本');
+  });
+
+  test('固定态应用 .ljx-map-fixed 美化类（森林主题），WebGL 失败占位文案明确', () => {
+    assert.match(src, /ljx-map-fixed/, '固定态应用美化类');
+    assert.match(src, /当前设备不支持 WebGL 渲染/, 'WebGL 检测失败占位文案明确');
+  });
+});
+
+describe('MapPicker 交互顺序重构（先简化固定 → 再标点）', () => {
+  const src = read('components/map/MapPicker.jsx');
+
+  test('「简化固定」仅需地图就绪（disabled={!mapReady}），不再要求已定位段数', () => {
+    assert.match(src, /disabled=\{!mapReady\}/, '简化固定 disabled 只绑地图就绪');
+    assert.ok(!/locatedCount === 0/.test(src), '不应再要求 locatedCount>0 才能固定');
+  });
+
+  test('交互顺序：点击「简化固定」进入固定态，固定态提供「完成并保存」+「重新调整」', () => {
+    assert.match(src, /setFixed\(true\)/, '点击「简化固定」进入固定态');
+    assert.match(src, /完成并保存/, '固定态底部提供「完成并保存」一次性回传');
+    assert.match(src, /重新调整/, '固定态提供「重新调整」回编辑态');
+    assert.match(src, /onFixed\(\{/, '完成并保存时一次性回调 onFixed');
+    assert.match(src, /locatedPoints\.slice\(\)/, '保存回调只含已定位段');
+  });
+
+  test('固定态仍可标记段：段列表 + 可拖动浮标 + 确认固定', () => {
+    assert.match(src, /ljx-seg-list/, '固定态保留底部「导入录音」横向段列表');
+    assert.match(src, /new Marker\(\{ draggable: true/, '固定态手动模式仍生成可拖动浮标');
+    assert.match(src, /marker\.on\('dragend'/, 'dragend 记录拖动坐标');
+    assert.match(src, /确认固定此点/, '固定态确认固定按钮');
+    assert.match(src, /from: 'manual'/, '手动固定标记 from:manual');
+  });
+
+  test('搜索框仅编辑态展示，模式切换两态均保留', () => {
+    assert.match(src, /!fixed && \(\s*<div className="map-picker-search">/, '搜索框受 !fixed 守卫（仅编辑态）');
+    assert.match(src, /switchMode\('gps'\)/, 'GPS 切换保留');
+    assert.match(src, /switchMode\('manual'\)/, '手动切换保留');
+  });
+});
+
 describe('repository.getGeocode（mock 模式演示结果）', () => {
   test('关键词命中演示数据，字段 shape {name, lng, lat} 完整', () => {
     const res = repository.getGeocode('中山公园');
@@ -266,8 +349,8 @@ describe('MapPicker 交互重构（搜索非受控 / GPS·手动 / 可拖动浮�
     assert.match(src, /from: 'manual'/, '手动固定标记 from:manual');
   });
 
-  test('简化固定：无已定位段时禁用，回调仅含已定位段', () => {
-    assert.match(src, /locatedCount === 0/, '无已定位段禁用简化固定');
+  test('简化固定：仅需地图就绪即可固定（disabled={!mapReady}），回调仅含已定位段', () => {
+    assert.match(src, /disabled=\{!mapReady\}/, '无已定位段也可简化固定（先固定再标点）');
     assert.match(src, /locatedPoints\.slice\(\)/, '固定回调只含已定位段');
   });
 });

@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aggregateAnalyses } from '../src/utils/aggregate.js';
+import { wgs84ToGcj02 } from '../src/components/map/mapUtils.js';
 import { buildAnalysis, SPECIES, INDICES, HEATMAP, WAVEFORM } from '../src/data/mockData.js';
 
 /** 构造一份带指定物种数与宜居度的完整 analysis（含 durationSec，模拟录音界面注入） */
@@ -178,17 +179,54 @@ test('map: 各段 GPS 坐标并入 summary.map.points（无坐标段留空），
   });
   const withoutGps = buildAnalysis('g2.wav', { from: 'manual' });
   const summary = aggregateAnalyses([withGps, withoutGps]);
+  const [gcjLng, gcjLat] = wgs84ToGcj02(116.391284, 39.907139);
   assert.ok(summary.map, '有坐标段应生成 summary.map');
-  assert.deepEqual(summary.map.center, [116.391284, 39.907139], 'center 取首段坐标');
+  assert.deepEqual(summary.map.center, [gcjLng, gcjLat], 'center 取首段坐标（GPS 已火星纠偏）');
   assert.equal(summary.map.zoom, 13);
   assert.equal(summary.map.bounds, null);
   assert.equal(summary.map.points.length, 1, '无坐标段留空');
   assert.deepEqual(summary.map.points[0], {
-    lng: 116.391284,
-    lat: 39.907139,
+    lng: gcjLng,
+    lat: gcjLat,
     name: '第1段',
     score: 72,
     from: 'gps',
+  });
+});
+
+test('map: GPS 点做 WGS84→GCJ-02 火星纠偏，手动点坐标保持原样（已 GCJ-02）', () => {
+  const gps = buildAnalysis('gps.wav', {
+    lng: 116.391284,
+    lat: 39.907139,
+    from: 'gps',
+    livability: { score: 72, noise: 25, bio: 80, sound: 68 },
+  });
+  const manual = buildAnalysis('manual.wav', {
+    lng: 116.42,
+    lat: 39.93,
+    from: 'manual',
+    livability: { score: 55, noise: 45, bio: 60, sound: 50 },
+  });
+  const summary = aggregateAnalyses([gps, manual]);
+  assert.equal(summary.map.points.length, 2);
+  // GPS 点：偏移方向为向东北（lng/lat 各增约 0.003~0.006 度），且与 wgs84ToGcj02 一致
+  const [expLng, expLat] = wgs84ToGcj02(116.391284, 39.907139);
+  assert.deepEqual(summary.map.points[0], {
+    lng: expLng,
+    lat: expLat,
+    name: '第1段',
+    score: 72,
+    from: 'gps',
+  });
+  assert.ok(expLng > 116.391284 && expLat > 39.907139, '北京 GPS 点应向东北偏移（约 +0.002~0.006 度）');
+  assert.ok(expLng - 116.391284 < 0.01 && expLat - 39.907139 < 0.01, '偏移量级应约 +0.002~0.006 度，不超 0.01');
+  // 手动点：原样保留（不转换），避免二次偏移
+  assert.deepEqual(summary.map.points[1], {
+    lng: 116.42,
+    lat: 39.93,
+    name: '第2段',
+    score: 55,
+    from: 'manual',
   });
 });
 

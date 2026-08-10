@@ -1,12 +1,14 @@
 /**
  * MapCanvas.jsx
- * 真实地图组件（MapLibre GL v6 + 高德公开栅格瓦片，无 key）。
+ * 真实地图组件（MapLibre GL v3.6.2 + 高德公开栅格瓦片，无 key）。
  *
  * - 底图：高德瓦片（style=7 不带注记，子域 webrd0{1..4} 随机选一个固定）；
  * - 标点：GeoJSON source + circle 层（数据驱动 interpolate 渐变配色：score≥70 绿 / 50 琥珀 / <50 红）+
- *   circle-stroke 白边 + symbol 层 label（name 或「段N」）；
- * - interactive=false：dragPan/scrollZoom/boxZoom/doubleClickZoom/keyboard/touchZoomRotate 全部禁用（简化固定视图）；
- * - 空 points → 仅底图；WebGL 不可用 → 占位提示「当前设备不支持地图渲染」；
+ *   circle-stroke 白边；标点名称改用 maplibregl.Marker（DOM 标签，不依赖 glyphs / symbol 层，
+ *   规避 demotiles 字体国内不可达导致 label 层报错）；
+ * - interactive=false：dragPan/scrollZoom/boxZoom/doubleClickZoom/keyboard/touchZoomRotate 全部禁用，
+ *   并应用 .ljx-map-fixed 美化类（森林主题滤镜 + 圆角 + 细边框 + 柔和阴影 + 内衬纸色渐变 overlay）；
+ * - 空 points → 仅底图；WebGL 不可用 → 占位提示「当前设备不支持 WebGL 渲染」；
  * - 组件卸载 → map.remove() 防泄漏。
  *
  * 运行时加固（根治地图侧白屏）：
@@ -14,21 +16,33 @@
  *    错误绝不上抛给 React（否则卸载整棵树 → 白屏）；
  *  - 容器尺寸守卫：挂载时布局未就绪（clientHeight/clientWidth 为 0）先不初始化，
  *    requestAnimationFrame 后重试（最多 N 次），防尺寸 0 构造崩溃；
- *  - map.on('error') 监听：style 加载 / 瓦片异常 → 浮层「底图加载失败，请检查网络」，不崩溃。
+ *  - map.on('error') 监听：style 加载 / 瓦片异常 → 浮层展示「具体错误消息」（err.error?.message
+ *    或 err.message 截断），不崩溃。
+ *
+ * WebGL 兼容（真机 WebView 白屏根因修复）：
+ *  - maplibre-gl 固定 v3.6.2（最后一个支持 WebGL1 的稳定版）；v4+ 强制 WebGL2，
+ *    老 Android WebView 仅 WebGL1 时 new Map 失败 → 白屏；
+ *  - isWebGLSupported 同时探测 webgl2 / webgl / experimental-webgl，避免误判。
  *
  * 纯逻辑（配色/GeoJSON/默认值）抽在 ./mapUtils.js，可 Node 环境单测。
  */
 import { useEffect, useRef, useState } from 'react';
-import { Map as MaplibreMap } from 'maplibre-gl';
+import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { pointsToGeoJSON, circleColorExpression, pickAmapTileUrl, DEFAULT_CENTER } from './mapUtils';
+import { pointsToGeoJSON, circleColorExpression, scoreToColor, pickAmapTileUrl, DEFAULT_CENTER } from './mapUtils';
 
-/** 检测 WebGL 可用性（maplibre-gl v6 移除 maplibregl.supported，用 canvas 上下文探测） */
-function isWebGLSupported() {
+const { Map: MaplibreMap, Marker } = maplibregl;
+
+/**
+ * 检测 WebGL 可用性。
+ * v3.6.2 同时支持 WebGL2 与 WebGL1，因此优先探测 webgl2，再回退 webgl / experimental-webgl。
+ * （v4+ 移除 WebGL1，仅检测 webgl 会在只支持 WebGL1 的真机上误判通过 → 白屏。）
+ */
+export function isWebGLSupported() {
   if (typeof document === 'undefined' || typeof window === 'undefined') return false;
   try {
     const canvas = document.createElement('canvas');
-    return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+    return !!(canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
   } catch (e) {
     return false;
   }
@@ -40,12 +54,25 @@ const POINTS_SOURCE = 'ljx-points';
 /** 容器尺寸未就绪时的最大重试次数（rAF 重试） */
 const MAX_SIZE_RETRY = 4;
 
+/** 错误消息截断展示（浮层空间有限） */
+function truncateMessage(msg, max = 64) {
+  if (typeof msg !== 'string' || !msg) return '底图加载失败，请检查网络';
+  return msg.length > max ? `${msg.slice(0, max - 3)}...` : msg;
+}
+
+/** 提取 map error 事件的具体错误消息 */
+function errorTextOf(err) {
+  if (!err) return '底图加载失败，请检查网络';
+  const src = (err.error && (err.error.message || err.error.error)) || err.message;
+  return truncateMessage(src);
+}
+
 /**
  * @param {object} props
  * @param {Array<number>} [props.center] [lng, lat]
  * @param {number} [props.zoom]
  * @param {Array<{lng,lat,name?,score?,from?}>} [props.points]
- * @param {boolean} [props.interactive] true=可拖动/缩放；false=简化固定视图
+ * @param {boolean} [props.interactive] true=可拖动/缩放；false=简化固定视图（美化）
  * @param {number} [props.height] 地图高度 px
  * @param {(map: MaplibreMap) => void} [props.onMapReady] map load 后回调（MapPicker 取 center/zoom/bounds）
  * @param {({lng,lat}) => void} [props.onClick] interactive 时点击地图回调（手动加点）
@@ -61,15 +88,54 @@ export default function MapCanvas({
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
+  const labelMarkersRef = useRef([]); // 标点名称 DOM 标签（maplibregl.Marker，不依赖 glyphs）
   const loadedRef = useRef(false); // map 'load' 已触发
   const initAttemptsRef = useRef(0); // 尺寸守卫重试计数
   const [unsupported, setUnsupported] = useState(false);
   const [mapError, setMapError] = useState(null); // new Map 构造失败原因（渲染占位 + 重试）
-  const [tileError, setTileError] = useState(false); // style/瓦片加载失败 → 浮层提示
+  const [tileError, setTileError] = useState(null); // style/瓦片加载失败 → 浮层展示具体错误消息
   const [retryTick, setRetryTick] = useState(0); // 重试计数（驱动初始化 effect 重跑）
   // 用 ref 承接最新 props，避免创建 effect 闭包过期
   const propsRef = useRef({ points, onMapReady, onClick });
   propsRef.current = { points, onMapReady, onClick };
+
+  /** 标点名称标签（DOM Marker）：删除旧的并依据当前 points 重建（锁定/编辑态均需要） */
+  const syncLabelMarkers = (map) => {
+    try {
+      labelMarkersRef.current.forEach((m) => {
+        try {
+          m.remove();
+        } catch (e) {
+          /* 单个标签清理失败可忽略 */
+        }
+      });
+      labelMarkersRef.current = [];
+      const list = Array.isArray(propsRef.current.points) ? propsRef.current.points : [];
+      list.forEach((p) => {
+        if (!p || typeof p !== 'object') return;
+        const lng = Number(p.lng);
+        const lat = Number(p.lat);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        const name = typeof p.name === 'string' && p.name ? p.name : '';
+        if (!name) return;
+        const color = scoreToColor(p.score);
+        const el = document.createElement('div');
+        el.className = 'ljx-map-label';
+        const dot = document.createElement('i');
+        dot.style.background = color;
+        const txt = document.createElement('b');
+        txt.textContent = name;
+        el.appendChild(dot);
+        el.appendChild(txt);
+        const mk = new Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([lng, lat])
+          .addTo(map);
+        labelMarkersRef.current.push(mk);
+      });
+    } catch (e) {
+      /* 标签渲染失败不影响底图与 circle 标点 */
+    }
+  };
 
   /** 向地图添加/更新标点图层（load 后调用；重复调用走 setData） */
   const syncPoints = (map) => {
@@ -92,32 +158,13 @@ export default function MapCanvas({
         'circle-opacity': 0.9,
       },
     });
-    // symbol：label（name 或「段N」），allow-overlap 保证固定缩放也能看到
-    map.addLayer({
-      id: 'ljx-points-label',
-      type: 'symbol',
-      source: POINTS_SOURCE,
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-size': 11,
-        'text-offset': [0, -1.4],
-        'text-anchor': 'bottom',
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-      },
-      paint: {
-        'text-color': '#1f2a24',
-        'text-halo-color': '#ffffff',
-        'text-halo-width': 1.5,
-      },
-    });
   };
 
   /** 手动重试：清空错误态并重跑初始化 effect */
   const handleRetry = () => {
     initAttemptsRef.current = 0;
     setMapError(null);
-    setTileError(false);
+    setTileError(null);
     setRetryTick((t) => t + 1);
   };
 
@@ -149,7 +196,8 @@ export default function MapCanvas({
         container,
         style: {
           version: 8,
-          glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+          // 注意：不再声明 glyphs / symbol 层——demotiles 字体国内不可达会致 label 层报错；
+          // 标点名称改用 DOM Marker（syncLabelMarkers）。
           sources: {
             amap: { type: 'raster', tiles: [tileUrl], tileSize: 256 },
           },
@@ -167,10 +215,16 @@ export default function MapCanvas({
     }
     mapRef.current = map;
     setMapError(null);
-    setTileError(false);
+    setTileError(null);
 
-    // 底图错误监听：style 加载失败 / 瓦片异常 → 浮层提示（不影响页面骨架）
-    const onError = () => setTileError(true);
+    // 底图错误监听：style 加载失败 / 瓦片异常 → 浮层展示具体错误消息（不影响页面骨架）
+    const onError = (err) => {
+      try {
+        setTileError(errorTextOf(err));
+      } catch (e) {
+        setTileError('底图加载失败，请检查网络');
+      }
+    };
     map.on('error', onError);
 
     if (!interactive) {
@@ -191,6 +245,7 @@ export default function MapCanvas({
       loadedRef.current = true;
       try {
         syncPoints(map);
+        syncLabelMarkers(map);
       } catch (e) {
         /* 标点失败不影响底图 */
       }
@@ -220,6 +275,14 @@ export default function MapCanvas({
     return () => {
       loadedRef.current = false;
       try {
+        labelMarkersRef.current.forEach((m) => {
+          try {
+            m.remove();
+          } catch (e) {
+            /* 忽略 */
+          }
+        });
+        labelMarkersRef.current = [];
         map.off('error', onError);
         map.off('load', onLoad);
         map.off('click', onClickHandler);
@@ -232,12 +295,13 @@ export default function MapCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryTick]);
 
-  // points 变化 → 更新标点 source（map 已 load 时）
+  // points 变化 → 更新标点 source 与名称标签（map 已 load 时）
   useEffect(() => {
     const map = mapRef.current;
     if (map && loadedRef.current) {
       try {
         syncPoints(map);
+        syncLabelMarkers(map);
       } catch (e) {
         /* 忽略 */
       }
@@ -252,7 +316,7 @@ export default function MapCanvas({
         style={{ height }}
       >
         <div className="cap" style={{ marginBottom: 0 }}>
-          当前设备不支持地图渲染
+          当前设备不支持 WebGL 渲染
         </div>
         <p className="text-[11px] text-ink-soft mt-1">可改用搜索定位 / 手动拖动选择区域</p>
       </div>
@@ -281,7 +345,7 @@ export default function MapCanvas({
     <div style={{ position: 'relative', width: '100%' }}>
       <div
         ref={containerRef}
-        className={`ljx-map-canvas${interactive ? ' ljx-map-canvas-interactive' : ''}`}
+        className={`ljx-map-canvas${interactive ? ' ljx-map-canvas-interactive' : ' ljx-map-fixed'}`}
         style={{ width: '100%', height, borderRadius: 12, overflow: 'hidden', background: '#e8eef3' }}
       />
       {tileError && (
@@ -303,7 +367,7 @@ export default function MapCanvas({
             textAlign: 'center',
           }}
         >
-          底图加载失败，请检查网络
+          {tileError}
         </div>
       )}
     </div>

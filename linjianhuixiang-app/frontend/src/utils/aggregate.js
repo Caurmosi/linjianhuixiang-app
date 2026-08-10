@@ -15,6 +15,7 @@
  *  - durationSec 为各段时长之和（各段 analysis.durationSec 由录音界面注入，缺失按 0 计）。
  */
 import { gradeOf } from '../data/repository.js';
+import { wgs84ToGcj02 } from '../components/map/mapUtils.js';
 
 /** 每个样点的宜居度等级色（与 MapScreen / gradeOf 一致） */
 const COLOR = { good: '#2e7d52', mid: '#d49a26', bad: '#c25a39' };
@@ -122,14 +123,23 @@ function buildMapPoints(analyses) {
 /**
  * 各段 GPS 坐标 → 真实地图标点（summary.map.points）。
  * 仅并入带合法 lng/lat 的段（无坐标的段留空，由 MapPicker 手动选点补充）。
+ * GPS 点（from==='gps'）做 WGS84 → GCJ-02 火星坐标纠偏（Android 定位桥返回 WGS84，
+ * 高德瓦片为 GCJ-02，直接混用偏移数百米）；手动点本身已是 GCJ-02，不转。
  * 标点 shape：{lng, lat, name, score, from:'gps'|'manual'}（与地图数据契约一致）。
  */
 function buildMapPointsGeo(analyses) {
   const points = [];
   analyses.forEach((a, i) => {
-    const lng = Number(a && a.lng);
-    const lat = Number(a && a.lat);
+    let lng = Number(a && a.lng);
+    let lat = Number(a && a.lat);
     if (!Number.isFinite(lng) || !Number.isFinite(lat)) return; // 无坐标段留空
+    if (a && a.from === 'gps') {
+      const [gcjLng, gcjLat] = wgs84ToGcj02(lng, lat);
+      if (Number.isFinite(gcjLng) && Number.isFinite(gcjLat)) {
+        lng = gcjLng;
+        lat = gcjLat;
+      }
+    }
     points.push({
       lng,
       lat,

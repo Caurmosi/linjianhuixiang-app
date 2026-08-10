@@ -1442,6 +1442,55 @@ body {
   text-align: center;
 }
 
+/* ===== 简化固定视图 · 森林主题美化（区别于编辑态原始路网） ===== */
+.ljx-map-fixed {
+  /* 底图整体偏柔和绿调，一眼区别于编辑态的高德原始路网 */
+  filter: saturate(0.9) contrast(0.98) brightness(1.03) hue-rotate(6deg);
+  border-radius: 14px !important;
+  border: 1px solid var(--forest-300);
+  box-shadow: 0 6px 18px -8px rgba(31, 90, 63, 0.38), 0 1px 2px rgba(27, 42, 34, 0.06);
+  position: relative;
+}
+.ljx-map-fixed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  /* 内衬纸色背景渐变 overlay：顶部清透高光 → 底部淡绿晕染，卡片化 */
+  background: linear-gradient(160deg, rgba(230, 243, 234, 0.18), rgba(255, 255, 255, 0) 42%, rgba(143, 203, 166, 0.12));
+}
+
+/* 标点名称 DOM 标签（maplibregl.Marker，不依赖 glyphs） */
+.ljx-map-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(27, 42, 34, 0.18);
+  white-space: nowrap;
+  font-family: var(--f-body);
+  pointer-events: none; /* 标签不拦截地图点击 / 浮标拖动 */
+  line-height: 1;
+}
+.ljx-map-label i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.ljx-map-label b {
+  font-weight: 700;
+}
+
 /* ===== 设置 ===== */
 .set-list {
   background: var(--surface);
