@@ -327,7 +327,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
       ) : (
         <MapCanvas
           key="edit"
-          center={normalizeMapData({ center: initialCenter, zoom: initialZoom, points })?.center || DEFAULT_CENTER}
+          center={normalizeMapData({ center: initialCenter, zoom: initialZoom, points: initialPoints })?.center || DEFAULT_CENTER}
           zoom={initialZoom || 12}
           points={locatedPoints}
           interactive
