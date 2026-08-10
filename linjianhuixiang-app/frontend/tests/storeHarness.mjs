@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import * as repository from '../src/data/repository.js';
+import { aggregateAnalyses } from '../src/utils/aggregate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const storePath = path.join(__dirname, '..', 'src', 'store', 'appStore.jsx');
@@ -53,6 +54,7 @@ const sandbox = {
   buildMockAnalysis: repository.buildMockAnalysis,
   getHistory: repository.getHistory,
   isMockMode: repository.isMockMode,
+  aggregateAnalyses,
 };
 vm.createContext(sandbox);
 vm.runInContext(

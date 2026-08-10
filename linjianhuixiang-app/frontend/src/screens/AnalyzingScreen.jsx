@@ -1,6 +1,10 @@
 /**
  * AnalyzingScreen.jsx
- * 分析中：声波动画 + 管线步骤进度 + 实时百分比，自动推进并在 100% 后跳转结果页
+ * 分析中：
+ *  - 单文件模式：声波动画 + 管线步骤进度 + 实时百分比，自动推进并在 100% 后跳转结果页；
+ *  - 批量模式（START_BATCH）：逐项 await buildAnalysis，BATCH_PROGRESS 推进，
+ *    显示「分析 {index+1}/{total}」+ 当前录音名 + 进度动画；全部完成由 reducer 聚合后跳地图综合页。
+ * 失败兜底：单项失败用 buildMockAnalysis（与单次一致），继续下一项，绝不中断。
  */
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
@@ -18,13 +22,54 @@ const STAGES = [
 
 const DURATION = 6800; // 演示总时长 ms
 const STEP = 100 / STAGES.length;
+const BATCH_STEP_MS = 420; // 批量逐项最小展示时长（mock 同步返回时保证动画可见）
 
 export default function AnalyzingScreen() {
   const { state, dispatch } = useApp();
   const [progress, setProgress] = useState(0);
   const doneRef = useRef(false);
+  const batchMode = state.batchMode === true;
+  const batchTotal = (state.batchQueue && state.batchQueue.length) || 0;
 
+  // ---- 批量模式：逐项分析并推进 ----
   useEffect(() => {
+    if (!batchMode) return undefined;
+    let cancelled = false;
+    const items = state.batchQueue || [];
+    const idx = state.batchIndex;
+    if (idx >= items.length) return undefined;
+    const item = items[idx];
+    const overrides = item && item.overrides ? item.overrides : {};
+    const recording = item && item.name ? item.name : '录音';
+
+    const run = async () => {
+      let analysis;
+      try {
+        analysis = await Promise.resolve(
+          buildAnalysis(recording, { ...overrides, audioFile: item.file, threshold: state.threshold })
+        );
+      } catch (err) {
+        // 单项失败：与单次一致的降级策略（buildMockAnalysis 兜底），继续下一项
+        const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
+        dispatch({ type: 'TOAST', message: `第 ${idx + 1} 项识别失败：${reason}，已用演示结果兜底` });
+        analysis = buildMockAnalysis(recording, overrides);
+      }
+      // 至少展示一小段时间，让「分析 N/M」可感知（真实上传耗时通常已超过该值）
+      await new Promise((resolve) => window.setTimeout(resolve, BATCH_STEP_MS));
+      if (cancelled) return;
+      dispatch({ type: 'BATCH_PROGRESS', index: idx, result: analysis });
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+    // batchQueue 为同一引用直至完成，batchIndex 变化驱动逐项推进
+  }, [dispatch, batchMode, state.batchIndex, state.batchQueue, state.threshold]);
+
+  // ---- 单文件模式：动画 + 并行请求（现有行为） ----
+  useEffect(() => {
+    if (batchMode) return undefined;
     let raf = 0;
     let timer = 0;
     let cancelled = false;
@@ -76,11 +121,51 @@ export default function AnalyzingScreen() {
       cancelAnimationFrame(raf);
       window.clearTimeout(timer);
     };
-  }, [dispatch, state.recording, state.analysisOverrides, state.audioFile, state.threshold]);
+  }, [dispatch, batchMode, state.recording, state.analysisOverrides, state.audioFile, state.threshold]);
 
+  const waveDelays = [0, 0.1, 0.2, 0.3, 0.15, 0.25, 0.05, 0.35, 0.2, 0.1, 0.3, 0.15];
+
+  // ---- 批量模式渲染：分析 N/M + 当前录音名 + 进度动画 ----
+  if (batchMode) {
+    const current = Math.min(batchTotal, state.batchIndex + 1);
+    const currentName = batchTotal > 0 && state.batchQueue[state.batchIndex] ? state.batchQueue[state.batchIndex].name : '';
+    const pct = batchTotal > 0 ? Math.round((state.batchIndex / batchTotal) * 100) : 0;
+    return (
+      <div className="analyzing">
+        <div className="wave">
+          {waveDelays.map((d, i) => (
+            <i key={i} style={{ animationDelay: `${d}s` }} />
+          ))}
+        </div>
+        <h2>正在分析声景…</h2>
+        <p>
+          分析 {current}/{batchTotal} · {currentName}
+        </p>
+
+        <div className="pipe batch-pipe">
+          <div className="step active">
+            <div className="dot">
+              <IconSpark size={14} />
+            </div>
+            <div>
+              <b>批量逐段识别</b>
+              <span>每段独立分析 · 全部完成后聚合为区域综合</span>
+            </div>
+            <span className="pct">{pct}%</span>
+          </div>
+        </div>
+
+        <div className="bar batch-bar">
+          <i style={{ width: `${pct}%` }} />
+        </div>
+        <p className="batch-hint">已分析 {Math.min(batchTotal, state.batchIndex)} / {batchTotal} 段，请稍候…</p>
+      </div>
+    );
+  }
+
+  // ---- 单文件模式渲染（现有） ----
   const current = Math.min(STAGES.length - 1, Math.floor(progress / STEP));
   const stagePct = Math.round(((progress - current * STEP) / STEP) * 100);
-  const waveDelays = [0, 0.1, 0.2, 0.3, 0.15, 0.25, 0.05, 0.35, 0.2, 0.1, 0.3, 0.15];
 
   return (
     <div className="analyzing">

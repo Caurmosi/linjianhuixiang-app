@@ -9,6 +9,7 @@ import { AppProvider, useApp } from './store/appStore.jsx';
 import BottomNav from './components/BottomNav';
 import HomeScreen from './screens/HomeScreen';
 import AnalyzingScreen from './screens/AnalyzingScreen';
+import RecordScreen from './screens/RecordScreen';
 import ResultsScreen from './screens/ResultsScreen';
 import SpeciesScreen from './screens/SpeciesScreen';
 import LivabilityScreen from './screens/LivabilityScreen';
@@ -22,6 +23,7 @@ import SampleScreen from './screens/SampleScreen';
 const SCREENS = {
   home: HomeScreen,
   analyzing: AnalyzingScreen,
+  record: RecordScreen,
   results: ResultsScreen,
   species: SpeciesScreen,
   livability: LivabilityScreen,

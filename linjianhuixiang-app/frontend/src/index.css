@@ -441,6 +441,45 @@ body {
   gap: 10px;
   margin-bottom: 14px;
 }
+.record-card {
+  background: linear-gradient(155deg, #f0f8f1, #fff);
+  border: 1.5px solid var(--forest-400);
+  border-radius: var(--radius);
+  padding: 24px 22px;
+  text-align: center;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease);
+}
+.record-card:active {
+  transform: scale(0.99);
+}
+.record-card .up {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 12px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, var(--forest-500), var(--forest-700));
+  display: grid;
+  place-items: center;
+  box-shadow: 0 10px 22px -10px rgba(31, 90, 63, 0.7);
+}
+.record-card .up svg {
+  width: 28px;
+  height: 28px;
+  stroke: #fff;
+}
+.record-card h3 {
+  font-size: 19px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.record-card p {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
 .recent {
   display: flex;
   gap: 12px;
@@ -1246,4 +1285,189 @@ input[type='range']::-moz-range-thumb {
     opacity: 1;
     transform: translate(-50%, 0);
   }
+}
+
+/* ===== 实时录音（RecordScreen） ===== */
+.record-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0 18px;
+}
+.record-btn {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: linear-gradient(150deg, var(--forest-500), var(--forest-700));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 16px 34px -14px rgba(31, 90, 63, 0.75);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.15s var(--ease), box-shadow 0.2s;
+}
+.record-btn:active {
+  transform: scale(0.97);
+}
+.record-btn.recording {
+  background: linear-gradient(150deg, var(--clay), #a04326);
+  box-shadow: 0 0 0 0 rgba(194, 90, 57, 0.5);
+  animation: recPulse 1.5s infinite;
+}
+.record-btn.recording::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffd9c9;
+  animation: recBlink 1s ease-in-out infinite;
+}
+@keyframes recPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(194, 90, 57, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 16px rgba(194, 90, 57, 0);
+  }
+}
+@keyframes recBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.record-status {
+  font-family: var(--f-display);
+  font-size: 17px;
+  font-weight: 600;
+  margin-top: 18px;
+}
+.record-status.recording {
+  color: var(--clay);
+}
+.record-hint {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: 4px;
+}
+.record-empty {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  padding: 22px 0;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 15px;
+  margin-bottom: 14px;
+}
+.rec-seg {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface);
+  margin-bottom: 10px;
+}
+.rec-seg .thumb {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--forest-100);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.rec-seg .thumb svg {
+  width: 18px;
+  height: 18px;
+  stroke: var(--forest-600);
+}
+.rec-seg .meta {
+  min-width: 0;
+  flex: 1;
+}
+.rec-seg .meta b {
+  font-size: 13px;
+  font-weight: 700;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-seg .meta span {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+.rec-seg .meta span strong {
+  color: var(--forest-600);
+}
+.rec-del {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-faint);
+  display: grid;
+  place-items: center;
+  flex: none;
+  cursor: pointer;
+}
+.rec-del:active {
+  background: var(--paper-2);
+}
+.rec-del svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ===== 批量分析（AnalyzingScreen） ===== */
+.batch-pipe {
+  margin-bottom: 18px;
+}
+.batch-bar {
+  width: 100%;
+  max-width: 300px;
+  margin-bottom: 10px;
+}
+.batch-hint {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+/* ===== 地图综合视图（MapScreen / batchSummary） ===== */
+.sum-sp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  margin-bottom: 9px;
+}
+.sum-sp-name {
+  min-width: 0;
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.sum-sp-name i {
+  display: block;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  font-family: var(--f-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

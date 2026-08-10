@@ -171,3 +171,10 @@ export const IconStar = (p) => (
     <path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9 2.6.9-5.5-4-3.9 5.5-.8L12 3Z" />
   </Svg>
 );
+
+export const IconTrash = (p) => (
+  <Svg {...p}>
+    <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7" />
+    <path d="M10 11v6m4-6v6" />
+  </Svg>
+);

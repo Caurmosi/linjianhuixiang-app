@@ -1,0 +1,229 @@
+/**
+ * aggregate.test.mjs
+ * 多录音聚合（src/utils/aggregate.js）单元测试（D）：
+ * 物种合并去重计数 / livability 平均与等级推导 / indices 平均 / heatmap 逐格平均 /
+ * mapPoints 均匀分布与等级色 / waveform 取最长 / durationSec 求和 / 边界空数组 / 字段对齐。
+ * 运行：node --test tests/aggregate.test.mjs
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { aggregateAnalyses } from '../src/utils/aggregate.js';
+import { buildAnalysis, SPECIES, INDICES, HEATMAP, WAVEFORM } from '../src/data/mockData.js';
+
+/** 构造一份带指定物种数与宜居度的完整 analysis（含 durationSec，模拟录音界面注入） */
+function makeAnalysis(name, opts = {}) {
+  return buildAnalysis(name, {
+    speciesCount: opts.speciesCount ?? 5,
+    livability: opts.livability || { score: 72, noise: 25, bio: 80, sound: 68 },
+    durationSec: opts.durationSec ?? 30,
+  });
+}
+
+const a1 = makeAnalysis('第1段.wav', {
+  speciesCount: 5,
+  livability: { score: 72, noise: 25, bio: 80, sound: 68 },
+  durationSec: 30,
+});
+const a2 = makeAnalysis('第2段.wav', {
+  speciesCount: 4,
+  livability: { score: 55, noise: 45, bio: 60, sound: 50 },
+  durationSec: 45,
+});
+
+test('species: 合并去重（按 name），count 为出现次数，freq 求和，maxConf 取最大', () => {
+  const summary = aggregateAnalyses([a1, a2]);
+  // a1: SPECIES[0..4]，a2: SPECIES[0..3] → 白头鹎~乌鸫 出现 2 次，大山雀 1 次
+  const map = new Map(summary.species.map((s) => [s.name, s]));
+  assert.equal(map.get('白头鹎').count, 2);
+  assert.equal(map.get('乌鸫').count, 2);
+  assert.equal(map.get('大山雀').count, 1);
+  assert.equal(map.get('白头鹎').maxConf, SPECIES[0].conf);
+  assert.equal(map.get('白头鹎').freq, SPECIES[0].freq * 2, 'freq 应为两段之和');
+  assert.equal(map.get('白头鹎').latin, SPECIES[0].latin);
+  assert.equal(map.get('白头鹎').period, SPECIES[0].period);
+  assert.equal(summary.speciesCount, 5, '去重后共 5 种');
+});
+
+test('species: 按 count 降序，count 相同按 maxConf 降序', () => {
+  const summary = aggregateAnalyses([a1, a2]);
+  const names = summary.species.map((s) => s.name);
+  assert.deepEqual(names.slice(0, 4), ['白头鹎', '麻雀', '珠颈斑鸠', '乌鸫'], '出现 2 次的按 maxConf 降序');
+  assert.equal(names[4], '大山雀', '出现 1 次的排最后');
+});
+
+test('species: 物种字段结构 {name,latin,count,maxConf,freq,period}', () => {
+  const summary = aggregateAnalyses([a1, a2]);
+  for (const s of summary.species) {
+    assert.equal(typeof s.name, 'string');
+    assert.equal(typeof s.latin, 'string');
+    assert.ok(Number.isInteger(s.count) && s.count >= 1, `count 应为正整数: ${s.count}`);
+    assert.equal(typeof s.maxConf, 'number');
+    assert.ok(Number.isInteger(s.freq) && s.freq >= 0);
+    assert.equal(typeof s.period, 'string');
+  }
+});
+
+test('livability: 各段平均（score 四舍五入），grade/gradeEn 由平均 score 推导', () => {
+  const summary = aggregateAnalyses([a1, a2]);
+  assert.equal(summary.livability.score, Math.round((72 + 55) / 2), 'score 取平均四舍五入');
+  assert.equal(summary.livability.noise, Math.round((25 + 45) / 2));
+  assert.equal(summary.livability.bio, Math.round((80 + 60) / 2));
+  assert.equal(summary.livability.sound, Math.round((68 + 50) / 2));
+  assert.equal(summary.livability.grade, '一般');
+  assert.equal(summary.livability.gradeEn, 'Moderate');
+});
+
+test('livability: 等级边界与平均分一致（≥70 宜居 / ≥50 一般 / <50 受压）', () => {
+  const good = aggregateAnalyses([
+    makeAnalysis('g1.wav', { livability: { score: 82, noise: 20, bio: 90, sound: 80 } }),
+    makeAnalysis('g2.wav', { livability: { score: 76, noise: 18, bio: 85, sound: 74 } }),
+  ]);
+  assert.equal(good.livability.score, 79);
+  assert.equal(good.livability.grade, '宜居');
+  assert.equal(good.livability.gradeEn, 'Good');
+
+  const bad = aggregateAnalyses([
+    makeAnalysis('b1.wav', { livability: { score: 40, noise: 60, bio: 45, sound: 30 } }),
+    makeAnalysis('b2.wav', { livability: { score: 46, noise: 55, bio: 50, sound: 36 } }),
+  ]);
+  assert.equal(bad.livability.score, 43);
+  assert.equal(bad.livability.grade, '受压');
+  assert.equal(bad.livability.gradeEn, 'Stressed');
+});
+
+test('indices: 四个指数取平均，结构对齐单 analysis.indices（key/name/display/pct/desc）', () => {
+  const x1 = buildAnalysis('x1.wav');
+  x1.indices = INDICES.map((i) => ({ ...i, pct: i.pct }));
+  const x2 = buildAnalysis('x2.wav');
+  x2.indices = INDICES.map((i) => ({ ...i, pct: Math.max(0, i.pct - 20) }));
+  const summary = aggregateAnalyses([x1, x2]);
+  assert.equal(summary.indices.length, 4);
+  for (const idx of summary.indices) {
+    for (const f of ['key', 'name', 'display', 'pct', 'desc']) {
+      assert.ok(f in idx, `指数缺少字段 ${f}`);
+    }
+  }
+  assert.equal(summary.indices[0].key, 'ACI');
+  assert.equal(summary.indices[0].pct, INDICES[0].pct - 10, 'ACI pct 应为 (82+62)/2=72');
+  assert.equal(summary.indices[0].display, '72', 'display 用平均值（保留 1 位小数）');
+  assert.equal(summary.indices[0].name, INDICES[0].name);
+  assert.equal(summary.indices[0].desc, INDICES[0].desc);
+});
+
+test('heatmap: 逐格平均（4×12），值保留 3 位小数且在 [0,1]', () => {
+  const summary = aggregateAnalyses([a1, a2]);
+  assert.equal(summary.heatmap.length, 4);
+  for (const row of summary.heatmap) {
+    assert.equal(row.length, 12);
+    for (const v of row) {
+      assert.ok(typeof v === 'number' && v >= 0 && v <= 1, `热力值越界: ${v}`);
+    }
+  }
+  // 两份同源热力图平均 = 原值
+  assert.deepEqual(summary.heatmap, HEATMAP.map((row) => row.map((v) => Number(v.toFixed(3)))));
+});
+
+test('heatmap: 不同热力图时取逐格均值', () => {
+  const h1 = buildAnalysis('h1.wav');
+  h1.heatmap = [[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]];
+  const h2 = buildAnalysis('h2.wav');
+  h2.heatmap = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]];
+  const summary = aggregateAnalyses([h1, h2]);
+  assert.equal(summary.heatmap[0][0], 0.5, '(1+0)/2 = 0.5');
+  assert.equal(summary.heatmap[0][1], 0);
+});
+
+test('mapPoints: 每段一个样点，x/y 在 50~285 / 30~150 均匀分布', () => {
+  const summary = aggregateAnalyses([a1, a2, a3()]);
+  function a3() {
+    return makeAnalysis('第3段.wav', { speciesCount: 3, livability: { score: 40, noise: 60, bio: 45, sound: 30 }, durationSec: 20 });
+  }
+  assert.equal(summary.mapPoints.length, 3);
+  assert.deepEqual(summary.mapPoints.map((p) => p.x), [50, 168, 285], 'x 均匀分布 50→285');
+  assert.deepEqual(summary.mapPoints.map((p) => p.y), [30, 90, 150], 'y 均匀分布 30→150');
+  for (const p of summary.mapPoints) {
+    for (const f of ['x', 'y', 'c', 't']) {
+      assert.ok(f in p, `样点缺少字段 ${f}`);
+    }
+    assert.match(p.c, /^#[0-9a-fA-F]{6}$/);
+  }
+});
+
+test('mapPoints: 颜色按该段宜居度等级（≥70 绿 / ≥50 黄 / <50 红），t 仅奇数段标「第N段」', () => {
+  const summary = aggregateAnalyses([a1, a2, a3()]);
+  function a3() {
+    return makeAnalysis('第3段.wav', { speciesCount: 3, livability: { score: 40, noise: 60, bio: 45, sound: 30 }, durationSec: 20 });
+  }
+  assert.equal(summary.mapPoints[0].c, '#2e7d52', '第1段 score 72 → 绿');
+  assert.equal(summary.mapPoints[1].c, '#d49a26', '第2段 score 55 → 黄');
+  assert.equal(summary.mapPoints[2].c, '#c25a39', '第3段 score 40 → 红');
+  assert.equal(summary.mapPoints[0].t, '第1段', '奇数段标注');
+  assert.equal(summary.mapPoints[1].t, '', '偶数段不标');
+  assert.equal(summary.mapPoints[2].t, '第3段');
+});
+
+test('mapPoints: 单段时样点居中（x=167, y=90）且不标「第N段」', () => {
+  const summary = aggregateAnalyses([a1]);
+  assert.equal(summary.mapPoints.length, 1);
+  assert.equal(summary.mapPoints[0].x, 167);
+  assert.equal(summary.mapPoints[0].y, 90);
+});
+
+test('waveform: 取最长录音的波形（多段同长取第一段）', () => {
+  const long = buildAnalysis('长.wav');
+  long.waveform = Array.from({ length: 200 }, () => 0.5);
+  const short = buildAnalysis('短.wav');
+  short.waveform = [0.1, 0.2, 0.3];
+  const summary = aggregateAnalyses([short, long]);
+  assert.equal(summary.waveform, long.waveform, '应取最长的一段');
+  const same = aggregateAnalyses([a1, a2]);
+  assert.equal(same.waveform, a1.waveform, '同长取第一段（默认 WAVEFORM 引用一致）');
+});
+
+test('durationSec: 各段时长之和', () => {
+  const summary = aggregateAnalyses([a1, a2]);
+  assert.equal(summary.durationSec, 75);
+  // 缺 durationSec 的段落按 0 计（守卫）
+  const noDur = aggregateAnalyses([buildAnalysis('无时长.wav'), a1]);
+  assert.equal(noDur.durationSec, 30);
+});
+
+test('recording / speciesCount 与单 analysis 顶层字段对齐', () => {
+  const summary = aggregateAnalyses([a1, a2]);
+  assert.equal(summary.recording, '本区域 2 段录音综合');
+  assert.equal(summary.speciesCount, 5);
+  for (const key of ['recording', 'species', 'indices', 'livability', 'heatmap', 'mapPoints', 'waveform', 'speciesCount', 'durationSec']) {
+    assert.ok(key in summary, `综合摘要缺少字段 ${key}`);
+  }
+  assert.equal(typeof summary.livability.score, 'number');
+  assert.ok(Array.isArray(summary.mapPoints));
+});
+
+test('边界: 空数组返回零值摘要，不抛错', () => {
+  const summary = aggregateAnalyses([]);
+  assert.ok(summary, '不应抛错');
+  assert.equal(summary.recording, '本区域 0 段录音综合');
+  assert.equal(summary.speciesCount, 0);
+  assert.deepEqual(summary.species, []);
+  assert.deepEqual(summary.mapPoints, []);
+  assert.deepEqual(summary.waveform, []);
+  assert.equal(summary.durationSec, 0);
+  assert.equal(summary.livability.score, 0);
+  assert.equal(summary.heatmap.length, 4);
+  assert.equal(summary.heatmap[0].length, 12);
+});
+
+test('边界: 非数组 / 含 null 项均不抛错', () => {
+  assert.doesNotThrow(() => aggregateAnalyses(null));
+  assert.doesNotThrow(() => aggregateAnalyses(undefined));
+  const s = aggregateAnalyses([null, a1, undefined]);
+  assert.equal(s.speciesCount, 5);
+});
+
+test('边界: 缺失字段的残缺 analysis 不崩（守卫）', () => {
+  const ragged = { recording: '残.wav', livability: { score: 60 } };
+  const s = aggregateAnalyses([ragged, a1]);
+  assert.ok(s.speciesCount >= 5);
+  assert.ok(Array.isArray(s.indices));
+  assert.equal(s.heatmap.length, 4);
+});
