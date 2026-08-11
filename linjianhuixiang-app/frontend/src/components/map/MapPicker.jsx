@@ -361,6 +361,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
           zoom={mapData.zoom}
           points={locatedPoints}
           interactive={false}
+          simplified
           height={300}
           onMapReady={(map) => {
             // 加固：onMapReady 回调自身也 try/catch，异常不抛给 MapCanvas/React

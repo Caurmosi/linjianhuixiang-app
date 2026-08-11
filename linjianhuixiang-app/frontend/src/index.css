@@ -1443,8 +1443,9 @@ body {
 }
 
 /* ===== 简化固定视图 · 森林主题美化（区别于编辑态原始路网） ===== */
-/* 说明：主体风格化（去饱和/提亮/对比/森林绿 overlay）由 MapCanvas 的 raster paint + green-wash
-   在渲染管线内完成；此处仅保留轻量卡片样式与极轻微提亮，避免与 raster paint 叠加过度。 */
+/* 说明：主体风格化由 MapCanvas 承担——优先 OpenFreeMap 矢量瓦片（隐藏 POI/label，
+   水蓝/绿地/灰白扁平风，见 utils/simplifiedStyle.js）；矢量加载失败降级为高德 raster
+   paint（去饱和/提亮/对比 + 森林绿 overlay）。此处仅保留轻量卡片样式与极轻微提亮。 */
 .ljx-map-fixed {
   filter: brightness(1.02);
   border-radius: 14px !important;

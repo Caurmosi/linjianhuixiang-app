@@ -235,6 +235,7 @@ export default function MapScreen() {
                 zoom={mapData.zoom}
                 points={mapData.points}
                 interactive={false}
+                simplified
                 height={300}
               />
               <div className="legend">

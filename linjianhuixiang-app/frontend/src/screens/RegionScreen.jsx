@@ -138,6 +138,7 @@ export default function RegionScreen() {
                 zoom={detailMap.zoom}
                 points={detailMap.points}
                 interactive={false}
+                simplified
                 height={280}
               />
             </div>
