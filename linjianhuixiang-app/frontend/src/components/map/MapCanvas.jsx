@@ -11,6 +11,10 @@
  *   - 加载期间显示「简化地图加载中…」占位；
  *   - fetch 失败 → 降级为高德 raster + 去饱和/提亮/对比 + 森林绿 wash（至少比当前好看），
  *     并 Toast「简化地图加载失败，使用基础底图」。
+ * - 坐标系对齐：编辑态高德 raster 为 GCJ-02（火星），OpenFreeMap 矢量瓦片为 WGS84，
+ *   同一 GCJ-02 的 center/points 直接喂矢量底图偏移约百米级 → 仅在「实际应用矢量 style」
+ *   时（vectorApplied）将 center/points 反算回 WGS84 再渲染（gcj02ToWgs84）；降级高德
+ *   raster 分支不转换（高德底图即 GCJ-02）。转换在组件内部渲染路径，props 契约不变。
  * - 标点：GeoJSON source + circle 层（数据驱动 interpolate 渐变配色：score≥70 绿 /
  *   50 琥珀 / <50 红）+ circle-stroke 白边；标点名称改用 maplibregl.Marker（DOM 标签，
  *   不依赖 glyphs / symbol 层，规避 demotiles 字体国内不可达导致 label 层报错）；
@@ -37,7 +41,7 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { pointsToGeoJSON, circleColorExpression, scoreToColor, pickAmapTileUrl, DEFAULT_CENTER } from './mapUtils';
+import { pointsToGeoJSON, circleColorExpression, scoreToColor, pickAmapTileUrl, DEFAULT_CENTER, gcj02ToWgs84 } from './mapUtils';
 import { fetchSimplifiedStyle, isPoiOrLabelLayer, SIMPLIFIED_STYLE_URL, SIMPLIFIED_STYLE_TIMEOUT } from '../../utils/simplifiedStyle';
 import { useApp } from '../../store/appStore.jsx';
 
@@ -112,9 +116,39 @@ export default function MapCanvas({
   // 简化态：OpenFreeMap 矢量 style（异步获取）。null+未失败 = 加载中；失败 → 降级高德 raster。
   const [vectorStyle, setVectorStyle] = useState(null);
   const [vectorStyleFailed, setVectorStyleFailed] = useState(false);
-  // 用 ref 承接最新 props，避免创建 effect 闭包过期
-  const propsRef = useRef({ points, onMapReady, onClick, simplified });
-  propsRef.current = { points, onMapReady, onClick, simplified };
+
+  // 简化固定视图坐标对齐：OpenFreeMap 矢量瓦片 = WGS84，编辑态高德 raster = GCJ-02。
+  // 同一 GCJ-02 的 center/points 直接喂矢量底图会偏移约百米级 → 仅在「实际应用矢量
+  // style」时（simplified && vectorStyle 已成功加载）反算 GCJ-02 → WGS84 后再渲染；
+  // 降级高德 raster（vectorStyleFailed）分支不转换（高德底图即 GCJ-02，保持原坐标）。
+  const vectorApplied = simplified === true && !!vectorStyle;
+
+  // 渲染用坐标（仅组件内部渲染路径，不改 props / 不写回数据契约）：
+  //  - renderCenter：矢量底图时 GCJ-02 → WGS84；否则（编辑态/降级高德）原样；
+  //  - renderPoints：矢量底图时只转换 lng/lat，保留 name/score/from；非法点保持原样
+  //    交给 pointsToGeoJSON 统一过滤。转换仅此一处，避免「转换后再转」。
+  const renderCenter =
+    vectorApplied &&
+    Array.isArray(center) &&
+    center.length >= 2 &&
+    Number.isFinite(Number(center[0])) &&
+    Number.isFinite(Number(center[1]))
+      ? gcj02ToWgs84(Number(center[0]), Number(center[1]))
+      : center;
+  const renderPoints = vectorApplied
+    ? (Array.isArray(points) ? points : []).map((p) => {
+        if (!p || typeof p !== 'object') return p;
+        const lng = Number(p.lng);
+        const lat = Number(p.lat);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return p;
+        const [wLng, wLat] = gcj02ToWgs84(lng, lat);
+        return { ...p, lng: wLng, lat: wLat };
+      })
+    : points;
+
+  // 用 ref 承接最新 props（含渲染转换后的坐标），避免创建/更新 effect 闭包过期
+  const propsRef = useRef({ points: renderPoints, onMapReady, onClick, simplified, vectorApplied });
+  propsRef.current = { points: renderPoints, onMapReady, onClick, simplified, vectorApplied };
 
   /** 标点名称标签（DOM Marker）：删除旧的并依据当前 points 重建（锁定/编辑态均需要） */
   const syncLabelMarkers = (map) => {
@@ -298,7 +332,7 @@ export default function MapCanvas({
                 },
                 layers,
               },
-        center,
+        center: renderCenter,
         zoom,
         attributionControl: false,
       });

@@ -21,6 +21,7 @@ import {
   pickAmapTileUrl,
   fixedPoint,
   wgs84ToGcj02,
+  gcj02ToWgs84,
   DEFAULT_CENTER,
 } from '../src/components/map/mapUtils.js';
 import * as repository from '../src/data/repository.js';
@@ -190,6 +191,57 @@ describe('wgs84ToGcj02（WGS84 → GCJ-02 火星坐标纠偏）', () => {
     assert.deepEqual(wgs84ToGcj02('116.391', '39.907'), wgs84ToGcj02(116.391, 39.907), '数字字符串输入结果一致');
     const bad = wgs84ToGcj02('x', 39.9);
     assert.ok(Number.isNaN(bad[0]) && Number.isNaN(bad[1]), '非法输入返回 NaN 数组');
+  });
+});
+
+describe('gcj02ToWgs84（GCJ-02 → WGS84 火星坐标反算，矢量底图坐标对齐）', () => {
+  test('与 wgs84ToGcj02 互逆：gcj02ToWgs84(...wgs84ToGcj02(116.391, 39.907)) ≈ 原值（误差 <0.00001）', () => {
+    const [wLng, wLat] = gcj02ToWgs84(...wgs84ToGcj02(116.391, 39.907));
+    assert.ok(Number.isFinite(wLng) && Number.isFinite(wLat), '应返回 [lng, lat] 双数值数组');
+    assert.ok(Math.abs(wLng - 116.391) < 0.00001, `经度互逆误差应 <1e-5，实际 ${Math.abs(wLng - 116.391).toExponential(2)}`);
+    assert.ok(Math.abs(wLat - 39.907) < 0.00001, `纬度互逆误差应 <1e-5，实际 ${Math.abs(wLat - 39.907).toExponential(2)}`);
+  });
+
+  test('反算方向正确：北京 GCJ 点反算后应回落到西南侧（WGS84 在 GCJ 西南约百米级）', () => {
+    const [wLng, wLat] = gcj02ToWgs84(116.39724095859891, 39.9084011088464);
+    assert.ok(wLng < 116.39724095859891 && wLat < 39.9084011088464, 'GCJ 在 WGS84 东北向，反算应回落西南');
+    assert.ok(Math.abs(wLng - 116.391) < 0.0001 && Math.abs(wLat - 39.907) < 0.0001, '应回到原始 WGS84 附近');
+  });
+
+  test('境外坐标不偏转（与 wgs84ToGcj02 境外判断对称）：返回原值', () => {
+    assert.deepEqual(gcj02ToWgs84(0, 0), [0, 0], '境外（0,0）原样返回');
+    assert.deepEqual(gcj02ToWgs84(140, 40), [140, 40], '境外（140,40）原样返回');
+  });
+
+  test('非法输入返回 [NaN, NaN]；数字字符串输入与数值输入结果一致', () => {
+    const bad = gcj02ToWgs84('x', 39.9);
+    assert.ok(Number.isNaN(bad[0]) && Number.isNaN(bad[1]), '非法输入返回 NaN 数组');
+    assert.deepEqual(gcj02ToWgs84(NaN, 1), [NaN, NaN], 'NaN 输入返回 NaN');
+    assert.deepEqual(gcj02ToWgs84('116.397', '39.908'), gcj02ToWgs84(116.397, 39.908), '数字字符串输入结果一致');
+  });
+});
+
+describe('MapCanvas 简化态坐标转换（矢量底图 GCJ-02→WGS84 对齐）', () => {
+  const src = read('components/map/MapCanvas.jsx');
+
+  test('引入 vectorApplied 与 renderCenter/renderPoints 转换，且仅在矢量 style 实际应用时转换', () => {
+    assert.match(src, /const vectorApplied = simplified === true && !!vectorStyle/, '矢量 style 成功加载才算应用（失败/降级不转换）');
+    assert.match(src, /const renderCenter =/, '渲染中心走 renderCenter 转换');
+    assert.match(src, /const renderPoints =/, '标点走 renderPoints 转换');
+    assert.match(src, /gcj02ToWgs84/, '调用 GCJ-02 → WGS84 反算');
+  });
+
+  test('new Map 用 renderCenter；syncPoints/syncLabelMarkers 经 propsRef 用 renderPoints（转换仅 render 路径一处）', () => {
+    assert.match(src, /center: renderCenter,/, 'new Map 使用转换后中心');
+    assert.match(src, /propsRef\.current = \{ points: renderPoints/, 'propsRef 承接转换后标点，闭包不因 props 变化过期');
+    assert.match(src, /const geojson = pointsToGeoJSON\(propsRef\.current\.points\)/, 'GeoJSON 用转换后标点');
+    assert.match(src, /const list = Array\.isArray\(propsRef\.current\.points\) \? propsRef\.current\.points : \[\];/, 'DOM Marker 标签用转换后标点');
+  });
+
+  test('降级高德 raster 分支不转换（vectorApplied 条件已排除 vectorStyleFailed 与编辑态）', () => {
+    assert.ok(/vectorApplied\s*=\s*simplified === true && !!vectorStyle/.test(src), 'vectorStyleFailed / simplified=false 时 vectorApplied=false → 原坐标直通');
+    assert.match(src, /: center/, 'renderCenter 未应用时原样返回 center');
+    assert.match(src, /: points;/, 'renderPoints 未应用时原样返回 points');
   });
 });
 

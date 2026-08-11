@@ -210,3 +210,29 @@ export function wgs84ToGcj02(lng, lat) {
   const mgLng = lngN + dLng;
   return [mgLng, mgLat];
 }
+
+/**
+ * GCJ-02 → WGS84（火星坐标反算，不动点迭代）。
+ * 无解析解：以 gcj 为初值，反复执行 `wgs += gcj - wgs84ToGcj02(wgs)` 使
+ * wgs84ToGcj02(wgs) 收敛到目标 gcj（本地火星偏移近似常量，Jacobian 范数 <1，
+ * 迭代 3 次后误差 <1m，即 ~1e-5 度，足以栅格/矢量瓦片对齐）。
+ * 用途：简化固定视图用 OpenFreeMap 矢量瓦片（WGS84），编辑态高德 raster 为 GCJ-02，
+ * 同一 GCJ-02 的 center/points 直接喂矢量底图会偏移约百米级 → 渲染前反算回 WGS84。
+ * @param {number} lng 经度（GCJ-02）
+ * @param {number} lat 纬度（GCJ-02）
+ * @returns {[number, number]} [wgsLng, wgsLat]；境外返回原值（与 wgs84ToGcj02 境外判断对称）；非法输入返回 [NaN, NaN]
+ */
+export function gcj02ToWgs84(lng, lat) {
+  const lngN = Number(lng);
+  const latN = Number(lat);
+  if (!Number.isFinite(lngN) || !Number.isFinite(latN)) return [NaN, NaN];
+  if (gcjOutOfChina(lngN, latN)) return [lngN, latN]; // 境外无偏转，原样返回
+  let wgsLng = lngN;
+  let wgsLat = latN;
+  for (let i = 0; i < 3; i++) {
+    const [dLng, dLat] = wgs84ToGcj02(wgsLng, wgsLat);
+    wgsLng += lngN - dLng;
+    wgsLat += latN - dLat;
+  }
+  return [wgsLng, wgsLat];
+}
