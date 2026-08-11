@@ -1463,6 +1463,12 @@ body {
   /* 内衬纸色背景渐变 overlay：顶部清透高光 → 底部淡绿晕染，卡片化 */
   background: linear-gradient(160deg, rgba(230, 243, 234, 0.18), rgba(255, 255, 255, 0) 42%, rgba(143, 203, 166, 0.12));
 }
+/* 浮标/标点 DOM Marker（maplibregl.Marker 含可拖动浮标与名称标签）提升层级：
+   默认 z-index:auto(=0) 会被上方 .ljx-map-fixed::after（z-index:1）渐变 overlay 覆盖，
+   置 3 保证浮标始终可见可拖（absolute 定位元素 z-index 直接生效）。 */
+.ljx-map-fixed .maplibregl-marker {
+  z-index: 3;
+}
 
 /* 标点名称 DOM 标签（maplibregl.Marker，不依赖 glyphs） */
 .ljx-map-label {

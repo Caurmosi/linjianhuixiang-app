@@ -406,3 +406,47 @@ describe('MapPicker 交互重构（搜索非受控 / GPS·手动 / 可拖动浮�
     assert.match(src, /locatedPoints\.slice\(\)/, '固定回调只含已定位段');
   });
 });
+
+describe('MapPicker 手动选点浮标修复（异步加载 pending 机制 + 矢量坐标转换 + Marker z-index）', () => {
+  const src = read('components/map/MapPicker.jsx');
+  const css = readFileSync(fileURLToPath(new URL('../src/index.css', import.meta.url)), 'utf8');
+
+  test('新增 pendingSegRef：地图未就绪时记录用户想选的段', () => {
+    assert.match(src, /const pendingSegRef = useRef\(null\)/, '声明 pendingSegRef（未就绪待选段）');
+  });
+
+  test('selectSegment 地图未就绪不直接放弃：记录 pending + 置 activeSeg + toast', () => {
+    assert.match(src, /pendingSegRef\.current = idx;/, '未就绪时记录待选段下标');
+    assert.match(src, /setActiveSeg\(idx\);/, '未就绪时仍标记选中段');
+    assert.match(src, /地图加载中，完成后自动标记该段/, 'toast 提示完成后自动标记');
+  });
+
+  test('handleMapReady：地图就绪后若存在 pending 段 → setTimeout 0 自动补浮标', () => {
+    assert.match(src, /const handleMapReady = \(map\) => \{/, '抽取地图就绪回调');
+    assert.match(src, /mapRef\.current = map;/, '就绪后交回 map 实例');
+    assert.match(src, /pendingSegRef\.current != null/, '就绪后检查待选段');
+    assert.match(src, /setTimeout\(\(\) => selectSegment\(idx\), 0\)/, 'setTimeout 0 自动补浮标');
+    assert.match(src, /pendingSegRef\.current = null;/, '补浮标后清空待选段');
+    assert.match(src, /onMapReady=\{handleMapReady\}/, '固定态/编辑态共用 handleMapReady');
+  });
+
+  test('switchMode 与 reAdjust 均清空 pendingSegRef（待选段作废，无死循环）', () => {
+    const m = src.match(/const switchMode[\s\S]*?\n  \};/);
+    assert.ok(m && m[0].includes('pendingSegRef.current = null;'), 'switchMode 清空待选段');
+    const r = src.match(/const reAdjust[\s\S]*?\n  \};/);
+    assert.ok(r && r[0].includes('pendingSegRef.current = null;'), 'reAdjust 清空待选段');
+  });
+
+  test('selectSegment 浮标起点按地图坐标系转换：矢量 source（openmaptiles/ne2_shaded）→ gcj02ToWgs84', () => {
+    assert.match(src, /const st = typeof map\.getStyle === 'function' \? map\.getStyle\(\) : null;/, '读取实际 style 判断坐标系');
+    assert.match(src, /st\.sources\.openmaptiles \|\| st\.sources\.ne2_shaded/, 'OpenFreeMap liberty 矢量 source 判定');
+    assert.match(src, /gcj02ToWgs84\(Number\(seg\.point\.lng\), Number\(seg\.point\.lat\)\)/, '矢量底图时 GCJ-02 → WGS84 反算');
+    assert.match(src, /: \[seg\.point\.lng, seg\.point\.lat\]/, '降级高德（非矢量）直接用原 GCJ-02');
+  });
+
+  test('index.css：固定态 maplibre Marker（浮标/标点标签）z-index 3，高于 ::after 渐变 overlay(z-index:1)', () => {
+    assert.match(css, /\.ljx-map-fixed \.maplibregl-marker \{/, '存在 marker 提升层级规则');
+    assert.match(css, /z-index: 3;/, 'marker z-index 置 3');
+    assert.match(css, /\.ljx-map-fixed::after[\s\S]*?z-index: 1;/, '渐变 overlay 保持 z-index:1，两者不冲突');
+  });
+});

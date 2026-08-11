@@ -24,7 +24,7 @@ const { Marker } = maplibregl;
 import MapCanvas from './MapCanvas';
 import Button from '../ui/Button';
 import { getGeocode } from '../../data/repository';
-import { DEFAULT_CENTER, normalizeMapData } from './mapUtils';
+import { DEFAULT_CENTER, normalizeMapData, gcj02ToWgs84 } from './mapUtils';
 
 /** 标点 name（第N段）→ 段序号下标（aggregate 生成的标点统一用「第N段」命名） */
 function segmentIndexOf(point) {
@@ -43,6 +43,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
   const { dispatch } = useApp();
   const mapRef = useRef(null); // 当前活动地图实例（编辑态/固定态 MapCanvas onMapReady 交回）
   const markersRef = useRef([]); // 手动模式可拖动浮标
+  const pendingSegRef = useRef(null); // 地图未就绪（简化固定异步加载中）时用户想选的段，就绪后自动补浮标
   const pendingLocRef = useRef(null); // 浮标 dragend 后的临时坐标
   const [fixed, setFixed] = useState(false); // true=已简化固定（锁定视图 + 标点）
   const [mapData, setMapData] = useState(null); // 简化固定后的快照（center/zoom/bounds）
@@ -136,15 +137,31 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
   const selectSegment = (idx) => {
     const map = mapRef.current;
     if (!map) {
-      toast('地图加载中，请稍候');
+      // 地图异步加载中（简化固定态 fetch 矢量 style 期间 map 尚未构造）：
+      // 不直接放弃，记录待选段；地图就绪后由 handleMapReady 自动补浮标。
+      pendingSegRef.current = idx;
+      setActiveSeg(idx);
+      toast('地图加载中，完成后自动标记该段');
       return;
     }
     clearMarkers();
     setActiveSeg(idx);
     const seg = segmentState[idx];
+    // 浮标起点按地图实际坐标系取：简化固定态矢量底图（OpenFreeMap liberty，source 含
+    // openmaptiles / ne2_shaded）= WGS84，而段内 seg.point 是 GCJ-02（GPS/高德搜索已转）→
+    // 反算 WGS84 再 setLngLat，避免偏移百米；降级高德 raster（无矢量 source）即 GCJ-02，直接用。
+    let isVector = false;
+    try {
+      const st = typeof map.getStyle === 'function' ? map.getStyle() : null;
+      isVector = !!(st && st.sources && (st.sources.openmaptiles || st.sources.ne2_shaded));
+    } catch (e) {
+      isVector = false;
+    }
     const start =
-      seg && seg.point && Number.isFinite(Number(seg.point.lng))
-        ? [seg.point.lng, seg.point.lat]
+      seg && seg.point && Number.isFinite(Number(seg.point.lng)) && Number.isFinite(Number(seg.point.lat))
+        ? isVector
+          ? gcj02ToWgs84(Number(seg.point.lng), Number(seg.point.lat))
+          : [seg.point.lng, seg.point.lat]
         : map.getCenter();
     try {
       const marker = new Marker({ draggable: true, color: '#1f5a3f' }).setLngLat(start).addTo(map);
@@ -160,6 +177,24 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
       map.flyTo({ center: start, zoom: 15 });
     } catch (err) {
       toast('地图交互暂不可用，请稍候重试');
+    }
+  };
+
+  /** 地图就绪回调（编辑态/固定态 MapCanvas onMapReady 共用）：
+   *  - 交回 map 实例并置 mapReady；
+   *  - 若用户在地图就绪前（简化固定矢量 style 异步加载期间）已点选某段 → 自动补浮标。 */
+  const handleMapReady = (map) => {
+    try {
+      mapRef.current = map;
+      setMapReady(true);
+      if (pendingSegRef.current != null) {
+        const idx = pendingSegRef.current;
+        pendingSegRef.current = null;
+        // setTimeout 0：确保 mapRef.current 已在当前同步块置位后才补浮标（selectSegment 读取 mapRef）
+        setTimeout(() => selectSegment(idx), 0);
+      }
+    } catch (e) {
+      /* 地图就绪回调异常可忽略 */
     }
   };
 
@@ -196,11 +231,12 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
     toast('已固定该段位置');
   };
 
-  /** 切换 GPS / 手动模式：清理浮标与选中态 */
+  /** 切换 GPS / 手动模式：清理浮标、选中态与待选段 */
   const switchMode = (m) => {
     if (m === mode) return;
     clearMarkers();
     setActiveSeg(null);
+    pendingSegRef.current = null; // 地图未就绪时记录的待选段作废
     setMode(m);
   };
 
@@ -253,6 +289,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
   const reAdjust = () => {
     clearMarkers();
     setActiveSeg(null);
+    pendingSegRef.current = null; // 待选段作废（回编辑态重新定位区域）
     mapRef.current = null;
     setMapReady(false);
     setFixed(false);
@@ -363,15 +400,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
           interactive={false}
           simplified
           height={300}
-          onMapReady={(map) => {
-            // 加固：onMapReady 回调自身也 try/catch，异常不抛给 MapCanvas/React
-            try {
-              mapRef.current = map;
-              setMapReady(true);
-            } catch (e) {
-              /* 地图就绪回调异常可忽略 */
-            }
-          }}
+          onMapReady={handleMapReady}
         />
       ) : (
         <MapCanvas
@@ -381,15 +410,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
           points={locatedPoints}
           interactive
           height={300}
-          onMapReady={(map) => {
-            // 加固：onMapReady 回调自身也 try/catch，异常不抛给 MapCanvas/React
-            try {
-              mapRef.current = map;
-              setMapReady(true);
-            } catch (e) {
-              /* 地图就绪回调异常可忽略 */
-            }
-          }}
+          onMapReady={handleMapReady}
         />
       )}
 
