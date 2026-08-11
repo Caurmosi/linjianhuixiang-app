@@ -24,12 +24,26 @@ const { Marker } = maplibregl;
 import MapCanvas from './MapCanvas';
 import Button from '../ui/Button';
 import { getGeocode } from '../../data/repository';
-import { DEFAULT_CENTER, normalizeMapData, gcj02ToWgs84 } from './mapUtils';
+import { DEFAULT_CENTER, normalizeMapData, gcj02ToWgs84, wgs84ToGcj02 } from './mapUtils';
 
 /** 标点 name（第N段）→ 段序号下标（aggregate 生成的标点统一用「第N段」命名） */
 function segmentIndexOf(point) {
   const m = /^第(\d+)段$/.exec(point && point.name ? String(point.name) : '');
   return m ? Number(m[1]) - 1 : -1;
+}
+
+/**
+ * 判断地图是否矢量底图（OpenFreeMap liberty，坐标系 = WGS84）：
+ *  style.sources 含 openmaptiles / ne2_shaded → true；否则 false（高德 raster = GCJ-02）。
+ *  供浮标起点（selectSegment 反算）与确认写入（confirmPoint 转回）共用同一判定。
+ */
+function isVectorMap(map) {
+  try {
+    const st = typeof map.getStyle === 'function' ? map.getStyle() : null;
+    return !!(st && st.sources && (st.sources.openmaptiles || st.sources.ne2_shaded));
+  } catch (e) {
+    return false;
+  }
 }
 
 /**
@@ -150,13 +164,7 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
     // 浮标起点按地图实际坐标系取：简化固定态矢量底图（OpenFreeMap liberty，source 含
     // openmaptiles / ne2_shaded）= WGS84，而段内 seg.point 是 GCJ-02（GPS/高德搜索已转）→
     // 反算 WGS84 再 setLngLat，避免偏移百米；降级高德 raster（无矢量 source）即 GCJ-02，直接用。
-    let isVector = false;
-    try {
-      const st = typeof map.getStyle === 'function' ? map.getStyle() : null;
-      isVector = !!(st && st.sources && (st.sources.openmaptiles || st.sources.ne2_shaded));
-    } catch (e) {
-      isVector = false;
-    }
+    const isVector = isVectorMap(map);
     const start =
       seg && seg.point && Number.isFinite(Number(seg.point.lng)) && Number.isFinite(Number(seg.point.lat))
         ? isVector
@@ -217,12 +225,25 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
       toast('无法读取浮标位置，请重新生成');
       return;
     }
+    // 坐标按地图坐标系归一化：浮标读到的是地图当前坐标系坐标——简化固定态矢量底图
+    // （OpenFreeMap liberty）= WGS84，而段内 point 契约是 GCJ-02（与 GPS/高德搜索一致）→
+    // 转回 GCJ-02 再存储，MapCanvas 简化态渲染时 gcj02ToWgs84 转回用户拖的位置，无偏移；
+    // 若直接存 WGS84，会被 MapCanvas 当作 GCJ-02 再转一次（双重转换）→ 偏移约百米。
+    // 降级高德 raster（非矢量）即 GCJ-02，原样存储。
+    const vec = isVectorMap(map);
+    let lng = Number(loc.lng);
+    let lat = Number(loc.lat);
+    if (vec) {
+      const [gLng, gLat] = wgs84ToGcj02(lng, lat);
+      lng = gLng;
+      lat = gLat;
+    }
     setSegmentState((prev) =>
       prev.map((s, i) => {
         if (i !== activeSeg) return s;
         return {
           ...s,
-          point: { lng: Number(loc.lng), lat: Number(loc.lat), name: `第${activeSeg + 1}段`, score: s.score, from: 'manual' },
+          point: { lng, lat, name: `第${activeSeg + 1}段`, score: s.score, from: 'manual' },
         };
       })
     );

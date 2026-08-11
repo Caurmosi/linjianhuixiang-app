@@ -437,9 +437,10 @@ describe('MapPicker 手动选点浮标修复（异步加载 pending 机制 + 矢
     assert.ok(r && r[0].includes('pendingSegRef.current = null;'), 'reAdjust 清空待选段');
   });
 
-  test('selectSegment 浮标起点按地图坐标系转换：矢量 source（openmaptiles/ne2_shaded）→ gcj02ToWgs84', () => {
-    assert.match(src, /const st = typeof map\.getStyle === 'function' \? map\.getStyle\(\) : null;/, '读取实际 style 判断坐标系');
+  test('isVectorMap 统一判定：矢量 source（openmaptiles/ne2_shaded）→ WGS84；selectSegment 浮标起点复用反算', () => {
+    assert.match(src, /function isVectorMap\(map\)/, '抽取 isVectorMap 判定函数（组件内统一判断地图坐标系）');
     assert.match(src, /st\.sources\.openmaptiles \|\| st\.sources\.ne2_shaded/, 'OpenFreeMap liberty 矢量 source 判定');
+    assert.match(src, /const isVector = isVectorMap\(map\);/, 'selectSegment 复用 isVectorMap 判定（不再内联重复判断）');
     assert.match(src, /gcj02ToWgs84\(Number\(seg\.point\.lng\), Number\(seg\.point\.lat\)\)/, '矢量底图时 GCJ-02 → WGS84 反算');
     assert.match(src, /: \[seg\.point\.lng, seg\.point\.lat\]/, '降级高德（非矢量）直接用原 GCJ-02');
   });
@@ -448,5 +449,32 @@ describe('MapPicker 手动选点浮标修复（异步加载 pending 机制 + 矢
     assert.match(css, /\.ljx-map-fixed \.maplibregl-marker \{/, '存在 marker 提升层级规则');
     assert.match(css, /z-index: 3;/, 'marker z-index 置 3');
     assert.match(css, /\.ljx-map-fixed::after[\s\S]*?z-index: 1;/, '渐变 overlay 保持 z-index:1，两者不冲突');
+  });
+});
+
+describe('MapPicker confirmPoint 坐标归一化（矢量底图确认写入转回 GCJ-02，杜绝双重转换偏移）', () => {
+  const src = read('components/map/MapPicker.jsx');
+
+  test('confirmPoint 按地图坐标系归一化：矢量底图 wgs84ToGcj02 转回 GCJ-02 存储，非矢量原样', () => {
+    assert.match(src, /const vec = isVectorMap\(map\);/, 'confirmPoint 复用 isVectorMap 判定当前地图坐标系');
+    assert.match(src, /if \(vec\) \{/, '仅矢量底图进入转换分支（非 vector 坐标原样写入）');
+    assert.match(src, /const \[gLng, gLat\] = wgs84ToGcj02\(lng, lat\);/, '矢量底图浮标读到 WGS84 → wgs84ToGcj02 转回 GCJ-02');
+    assert.match(src, /point: \{ lng, lat, name: `第\$\{activeSeg \+ 1\}段`, score: s\.score, from: 'manual' \}/, '写入归一化后的 GCJ-02 坐标（契约一致）');
+    assert.match(src, /wgs84ToGcj02/, 'import 完整引入 wgs84ToGcj02');
+  });
+
+  test('矢量底图确认写入为 GCJ-02：gcj02ToWgs84 反算出的 WGS84 经 wgs84ToGcj02 还原到原契约点（成对互逆）', () => {
+    // 模拟完整链路：GCJ-02 契约点 → selectSegment 反算 WGS84 喂浮标（矢量底图）→
+    // 用户拖到该 WGS84 → confirmPoint 再转回 → 应还原到原 GCJ-02 契约点（无偏移）。
+    const gcj = { lng: 116.39724095859891, lat: 39.9084011088464 };
+    const [wLng, wLat] = gcj02ToWgs84(gcj.lng, gcj.lat); // 浮标在矢量底图上读到 WGS84
+    const [gLng, gLat] = wgs84ToGcj02(wLng, wLat); // confirmPoint 写入时转回 GCJ-02
+    assert.ok(Math.abs(gLng - gcj.lng) < 0.00001, `确认后经度应还原 GCJ-02 契约点，误差 ${Math.abs(gLng - gcj.lng).toExponential(2)}`);
+    assert.ok(Math.abs(gLat - gcj.lat) < 0.00001, `确认后纬度应还原 GCJ-02 契约点，误差 ${Math.abs(gLat - gcj.lat).toExponential(2)}`);
+  });
+
+  test('非 vector（高德 raster，GCJ-02 契约）原样写入：转换仅限定在 vec=true 分支内', () => {
+    assert.match(src, /if \(vec\) \{/, '非矢量地图跳过转换，坐标原样写入');
+    assert.ok(!/if \(!vec\)/.test(src), '不应有反向转换分支（默认即原样存储）');
   });
 });
