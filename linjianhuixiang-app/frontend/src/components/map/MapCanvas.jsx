@@ -6,8 +6,10 @@
  * - 标点：GeoJSON source + circle 层（数据驱动 interpolate 渐变配色：score≥70 绿 / 50 琥珀 / <50 红）+
  *   circle-stroke 白边；标点名称改用 maplibregl.Marker（DOM 标签，不依赖 glyphs / symbol 层，
  *   规避 demotiles 字体国内不可达导致 label 层报错）；
- * - interactive=false：dragPan/scrollZoom/boxZoom/doubleClickZoom/keyboard/touchZoomRotate 全部禁用，
- *   并应用 .ljx-map-fixed 美化类（森林主题滤镜 + 圆角 + 细边框 + 柔和阴影 + 内衬纸色渐变 overlay）；
+ * - interactive=false：dragPan/scrollZoom/boxZoom/doubleClickZoom/keyboard/touchZoomRotate 全部禁用；
+ *   简化固定视图的「简化美化」用 MapLibre 渲染管线内的 raster paint 属性实现（去饱和/提亮/对比），
+ *   并叠加一层极淡森林绿 fill overlay（ljx-green-wash），另辅以 .ljx-map-fixed 轻量卡片样式
+ *   （圆角/细边框/柔和阴影），视觉上明显区别于编辑态的高德原始路网；
  * - 空 points → 仅底图；WebGL 不可用 → 占位提示「当前设备不支持 WebGL 渲染」；
  * - 组件卸载 → map.remove() 防泄漏。
  *
@@ -190,6 +192,47 @@ export default function MapCanvas({
     initAttemptsRef.current = 0;
 
     const tileUrl = pickAmapTileUrl();
+    // 简化固定视图（interactive=false）：在渲染管线内做「简化美化」——大幅去饱和接近简笔、
+    // 提亮、略增强对比，并叠加一层极淡森林绿 overlay（整体偏「林间」）；编辑态保持高德原始清晰路网。
+    const amapLayer = {
+      id: 'amap',
+      type: 'raster',
+      source: 'amap',
+    };
+    if (!interactive) {
+      amapLayer.paint = {
+        'raster-saturation': -0.85, // 大幅去饱和 → 简笔风
+        'raster-contrast': 0.25, // 略增强对比，色块更分明
+        'raster-brightness-min': 0.12, // 提亮暗部
+        'raster-brightness-max': 0.92, // 提亮整体（水/绿地更清透）
+        'raster-hue-rotate': 0,
+      };
+    }
+    // 森林绿半透明 overlay：覆盖全世界的 fill polygon，仅简化固定视图叠加（编辑态不加）
+    const greenWashSource = {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]],
+            },
+          },
+        ],
+      },
+    };
+    const layers = [amapLayer];
+    if (!interactive) {
+      layers.push({
+        id: 'ljx-green-wash',
+        type: 'fill',
+        source: 'ljx-green-wash',
+        paint: { 'fill-color': '#2e7d52', 'fill-opacity': 0.06 },
+      });
+    }
     let map;
     try {
       map = new MaplibreMap({
@@ -200,8 +243,9 @@ export default function MapCanvas({
           // 标点名称改用 DOM Marker（syncLabelMarkers）。
           sources: {
             amap: { type: 'raster', tiles: [tileUrl], tileSize: 256 },
+            ...(interactive ? {} : { 'ljx-green-wash': greenWashSource }),
           },
-          layers: [{ id: 'amap', type: 'raster', source: 'amap' }],
+          layers,
         },
         center,
         zoom,

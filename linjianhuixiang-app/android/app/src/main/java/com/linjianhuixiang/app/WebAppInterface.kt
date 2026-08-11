@@ -3,10 +3,13 @@ package com.linjianhuixiang.app
 import android.content.ContentValues
 import android.content.Context
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
@@ -27,6 +30,7 @@ import java.io.IOException
  *   window.AndroidBridge.startNativeRecord()
  *   window.AndroidBridge.stopNativeRecord()
  *   window.AndroidBridge.isNativeRecording()
+ *   window.AndroidBridge.startLocationUpdate()
  *   window.AndroidBridge.getLocation()
  *   window.AndroidBridge.saveAudio(dataUrl, filename)
  *   window.AndroidBridge.importAudio(dataUrl, filename)
@@ -34,7 +38,9 @@ import java.io.IOException
  *
  * 实时录音：优先走原生 MediaRecorder（startNativeRecord/stopNativeRecord），
  * 输出 m4a(aac) 并 Base64 返回，绕开 WebView getUserMedia 在部分机型/ file:// 下不可靠的问题。
- * 定位：getLocation() 返回 last known "lng,lat"（GPS→NETWORK 兜底），供录音标点。
+ * 定位：录音前先 startLocationUpdate() 主动请求一次 GPS 定位（预热），
+ * 回调结果缓存到 lastFix；getLocation() 优先返回 lastFix（最新），
+ * 否则回退 last known "lng,lat"（GPS→NETWORK 兜底），供录音标点。
  * 权限相关能力由 MainActivity 注入 lambda（ensureRecordPermission / ensureWritePermission /
  * ensureLocationPermission），本类不直接持有 Activity，保持依赖干净。
  */
@@ -48,6 +54,11 @@ class WebAppInterface(
     // 原生录音状态：一次只允许一段活动录音（startNativeRecord 成功即占用，stopNativeRecord 后释放）
     private var nativeRecorder: MediaRecorder? = null
     private var nativeRecordFile: File? = null
+
+    // 主动定位：startLocationUpdate() 请求一次 GPS 更新，回调结果缓存到 lastFix（getLocation 优先返回）。
+    // singleFixListener 仅在 API<30 requestSingleUpdate 分支使用，回调后置空防泄漏。
+    private var lastFix: Location? = null
+    private var singleFixListener: LocationListener? = null
 
     @JavascriptInterface
     fun toast(message: String) {
@@ -155,7 +166,8 @@ class WebAppInterface(
     /**
      * GPS 定位：返回 "lng,lat"（6 位小数，GCJ-02/WGS84 原样透传，前端按高德瓦片直接使用）。
      * - 未授权 → 发起系统权限请求，返回 ""（前端可手动选点）；
-     * - 取 last known location：GPS_PROVIDER 优先，NETWORK_PROVIDER 兜底；
+     * - 优先返回 startLocationUpdate() 主动定位的最新结果（lastFix），
+     *   其次取 last known location（GPS_PROVIDER 优先，NETWORK_PROVIDER 兜底）；
      * - 无任何已知位置 → ""。
      */
     @Suppress("DEPRECATION")
@@ -171,14 +183,14 @@ class WebAppInterface(
                     Log.e(TAG, "getLocation: LocationManager 不可用")
                     return ""
                 }
-        val location: Location? =
-            try {
-                locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            } catch (e: Exception) {
-                Log.w(TAG, "getLocation: getLastKnownLocation 异常: ${e.message}")
-                null
-            }
+        // 主动定位预热结果优先；无则回退 last known（GPS→NETWORK 兜底）
+        val location: Location? = lastFix ?: try {
+            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+        } catch (e: Exception) {
+            Log.w(TAG, "getLocation: getLastKnownLocation 异常: ${e.message}")
+            null
+        }
         if (location == null) {
             Log.i(TAG, "getLocation: 无已知位置，返回空")
             return ""
@@ -187,6 +199,76 @@ class WebAppInterface(
         val lat = "%.6f".format(location.latitude)
         Log.i(TAG, "getLocation: $lng,$lat")
         return "$lng,$lat"
+    }
+
+    /**
+     * 主动定位（预热）：请求一次 GPS 定位更新，回调结果缓存到 lastFix，
+     * 供录音停止后 getLocation() 优先返回（录音约 10s，足够拿到新位置）。
+     * - 无定位权限 → 返回 false（不发请求）；
+     * - API 30+：getCurrentLocation（一次性定位，回调即自动结束，无需手动移除）；
+     * - API < 30：requestSingleUpdate（请求一次更新，回调后自动停止），listener 回调后置空防泄漏；
+     * - 返回 true 表示请求已发起（异步，不阻塞），定位结果稍后写入 lastFix。
+     */
+    @Suppress("DEPRECATION")
+    @JavascriptInterface
+    fun startLocationUpdate(): Boolean {
+        if (!ensureLocationPermission()) {
+            Log.i(TAG, "startLocationUpdate: 无定位权限")
+            return false
+        }
+        val locationManager =
+            context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+                ?: run {
+                    Log.e(TAG, "startLocationUpdate: LocationManager 不可用")
+                    return false
+                }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30+：getCurrentLocation(provider, cancellationSignal, executor, consumer)
+                locationManager.getCurrentLocation(
+                    LocationManager.GPS_PROVIDER,
+                    null,
+                    context.mainExecutor,
+                    { loc -> onLocationFix(loc) }
+                )
+            } else {
+                // API < 30：requestSingleUpdate（请求一次更新，回调后自动停止）
+                singleFixListener?.let { old ->
+                    try {
+                        locationManager.removeUpdates(old)
+                    } catch (e: Exception) {
+                        /* 移除旧监听失败可忽略 */
+                    }
+                }
+                val listener = object : LocationListener {
+                    override fun onLocationChanged(location: Location) = onLocationFix(location)
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+
+                    override fun onProviderEnabled(provider: String) {}
+
+                    override fun onProviderDisabled(provider: String) {}
+                }
+                singleFixListener = listener
+                locationManager.requestSingleUpdate(
+                    LocationManager.GPS_PROVIDER,
+                    listener,
+                    Looper.getMainLooper()
+                )
+            }
+        } catch (e: Exception) {
+            singleFixListener = null
+            Log.w(TAG, "startLocationUpdate: 主动定位异常: ${e.message}")
+            return false
+        }
+        return true
+    }
+
+    /** 主动定位回调：缓存最新位置；单次请求的 listener 用完即置空（防泄漏） */
+    private fun onLocationFix(location: Location?) {
+        if (location != null) lastFix = location
+        singleFixListener = null
     }
 
     /**

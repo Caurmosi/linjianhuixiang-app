@@ -78,6 +78,15 @@ export default function RecordScreen() {
 
     // 1) 真机新壳：原生 MediaRecorder 桥
     if (hasNative) {
+      // GPS 预热：请求一次主动定位（录音期间约 10s 足够拿到新位置），
+      // 停止后 readLocation() 的 getLocation() 会优先返回这次定位结果
+      try {
+        if (typeof bridge.startLocationUpdate === 'function') {
+          bridge.startLocationUpdate();
+        }
+      } catch (err) {
+        /* 预热失败可忽略：getLocation 仍回退 last known / 手动模式 */
+      }
       let ok = false;
       try {
         ok = bridge.startNativeRecord() === true;
