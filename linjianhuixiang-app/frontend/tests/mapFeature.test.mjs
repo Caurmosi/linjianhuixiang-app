@@ -478,3 +478,20 @@ describe('MapPicker confirmPoint 坐标归一化（矢量底图确认写入转�
     assert.ok(!/if \(!vec\)/.test(src), '不应有反向转换分支（默认即原样存储）');
   });
 });
+
+describe('MapPicker selectSegment 不强制缩放（保持已固定视野，视野外仅平移）', () => {
+  const src = read('components/map/MapPicker.jsx');
+
+  test('selectSegment 不再含 zoom: 15 强制缩放', () => {
+    const seg = src.slice(src.indexOf('const selectSegment'), src.indexOf('const handleMapReady'));
+    assert.ok(!/zoom:\s*15/.test(seg), '手动选点不应强制缩放到 zoom 15（覆盖用户已固定视野）');
+  });
+
+  test('selectSegment 保持 zoom：起点在当前视野内不移动，视野外仅 panTo（不缩放）', () => {
+    const seg = src.slice(src.indexOf('const selectSegment'), src.indexOf('const handleMapReady'));
+    assert.match(seg, /map\.getBounds\(\)/, '读取当前视野 bounds 判断起点是否在视野内');
+    assert.match(seg, /bounds\.contains\(start\)/, '起点在视野内 → 不移动相机（浮标直接出现在当前视图）');
+    assert.match(seg, /map\.panTo\(start, \{ duration: 400 \}\)/, '起点在视野外 → panTo 保持 zoom 只平移');
+    assert.ok(!/map\.flyTo/.test(seg), 'selectSegment 不再调用 flyTo（避免覆盖用户缩放级别）');
+  });
+});

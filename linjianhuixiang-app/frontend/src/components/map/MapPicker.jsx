@@ -182,7 +182,17 @@ export default function MapPicker({ initialCenter, initialZoom, points: initialP
         }
       });
       markersRef.current.push(marker);
-      map.flyTo({ center: start, zoom: 15 });
+      // 不强制缩放：保持用户简化固定后精心调整的视野（不覆盖 zoom）。
+      // 仅当浮标起点不在当前视野内时才平移（保持 zoom，不缩放）让浮标可见；已在视野内则不做任何相机移动。
+      try {
+        const bounds = map.getBounds();
+        const inView = bounds && typeof bounds.contains === 'function' ? bounds.contains(start) : true;
+        if (!inView) {
+          map.panTo(start, { duration: 400 }); // 保持 zoom，只平移
+        }
+      } catch (e) {
+        /* 相机移动失败可忽略，浮标已添加 */
+      }
     } catch (err) {
       toast('地图交互暂不可用，请稍候重试');
     }
