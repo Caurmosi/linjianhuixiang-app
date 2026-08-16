@@ -54,3 +54,19 @@ jobs:
           # 构建时下载真实 BirdNET 模型（约 170MB，Zenodo 官方源）
           build-args: |
             DOWNLOAD_MODEL=true
+
+      # 关键：ghcr 镜像默认私有，且可能不自动显示在仓库 Packages 页签。
+      # 用 API 把包设为 public（免费托管平台才能匿名拉取），并删除 private 包（避免占私有额度）。
+      - name: Make package public
+        shell: bash
+        run: |
+          # 包名 = IMAGE_NAME 去掉 owner 前缀（ghcr 剥离用户名）→ linjianhuixiang-app/linjianhuixiang-backend
+          PKG="linjianhuixiang-app/linjianhuixiang-backend"
+          echo "Setting $PKG visibility to public..."
+          curl -s -X PATCH \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/user/packages/container/$PKG" \
+            -d '{"visibility":"public"}' | head -c 300
+          echo ""
+          echo "Done."
