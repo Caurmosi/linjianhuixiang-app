@@ -81,12 +81,15 @@ describe('INDICES 声学指数数据结构', () => {
 });
 
 describe('LIVABILITY 宜居度数据结构', () => {
-  test('包含 score/grade/gradeEn/bio/sound/noise', () => {
-    for (const k of ['score', 'grade', 'gradeEn', 'bio', 'sound', 'noise']) {
+  test('包含 score/grade/gradeEn/bio/sound/noise/confidence/confidenceLabel', () => {
+    for (const k of ['score', 'grade', 'gradeEn', 'bio', 'sound', 'noise', 'confidence', 'confidenceLabel']) {
       assert.ok(k in LIVABILITY, `缺少字段 ${k}`);
     }
     assert.equal(typeof LIVABILITY.score, 'number');
     assert.ok(LIVABILITY.score >= 0 && LIVABILITY.score <= 100, 'score 应在 [0,100]');
+    assert.equal(typeof LIVABILITY.confidence, 'number');
+    assert.ok(LIVABILITY.confidence >= 0 && LIVABILITY.confidence <= 1, 'confidence 应在 [0,1]');
+    assert.ok(['高', '中', '低'].includes(LIVABILITY.confidenceLabel), 'confidenceLabel 应为 高/中/低');
   });
 
   test('score=68 与 gradeOf 一致（一般/Moderate）', () => {
@@ -94,6 +97,14 @@ describe('LIVABILITY 宜居度数据结构', () => {
     assert.equal(g.zh, '一般');
     assert.equal(g.en, 'Moderate');
     assert.equal(g.tone, 'mid');
+  });
+
+  test('默认 buildAnalysis 输出携带 confidence/confidenceLabel，overrides 局部覆盖不丢失', () => {
+    const a = buildAnalysis('x.wav', { livability: { score: 82, noise: 22 } });
+    assert.equal(typeof a.livability.confidence, 'number');
+    assert.ok(a.livability.confidence >= 0 && a.livability.confidence <= 1);
+    assert.ok(['高', '中', '低'].includes(a.livability.confidenceLabel));
+    assert.equal(a.livability.confidence, LIVABILITY.confidence, '未覆盖 confidence 时补默认');
   });
 });
 

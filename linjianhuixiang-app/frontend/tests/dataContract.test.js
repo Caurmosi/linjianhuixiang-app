@@ -60,11 +60,14 @@ describe('数据契约：analysis 顶层字段', () => {
     }
   });
 
-  test('analysis.livability 子字段（score/bio/sound/noise）均存在', () => {
+  test('analysis.livability 子字段（score/bio/sound/noise/confidence/confidenceLabel）均存在', () => {
     const lv = buildAnalysis('x.wav').livability;
-    for (const f of ['score', 'bio', 'sound', 'noise']) {
+    for (const f of ['score', 'bio', 'sound', 'noise', 'confidence', 'confidenceLabel']) {
       assert.ok(f in lv, `缺少 livability.${f}`);
     }
+    assert.equal(typeof lv.confidence, 'number');
+    assert.ok(lv.confidence >= 0 && lv.confidence <= 1, 'confidence 应为 [0,1] 数值');
+    assert.ok(['高', '中', '低'].includes(lv.confidenceLabel), 'confidenceLabel 应为 高/中/低');
   });
 
   test('analysis.waveform 为数组，analysis.segmentPoints 为含 x/y/c/t 的样点数组', () => {
@@ -155,6 +158,15 @@ describe('数据契约：指数/地图/历史字段', () => {
     for (const f of ['grade', 'gradeEn']) {
       assert.ok(f in LIVABILITY, `LIVABILITY 缺少字段 ${f}`);
     }
+  });
+
+  test('LIVABILITY 含 confidence（0-1 数值）与 confidenceLabel（高/中/低）', () => {
+    for (const f of ['confidence', 'confidenceLabel']) {
+      assert.ok(f in LIVABILITY, `LIVABILITY 缺少字段 ${f}`);
+    }
+    assert.equal(typeof LIVABILITY.confidence, 'number');
+    assert.ok(LIVABILITY.confidence >= 0 && LIVABILITY.confidence <= 1, 'confidence 应为 [0,1] 数值');
+    assert.ok(['高', '中', '低'].includes(LIVABILITY.confidenceLabel), 'confidenceLabel 应为 高/中/低');
   });
 });
 

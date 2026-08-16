@@ -333,7 +333,7 @@ async def analyze(
     noise_ratio = noise_mod.estimate_noise_ratio(freqs, S, activity)
 
     mean_conf = float(np.mean([s["conf"] for s in species])) if species else 0.0
-    lv = livability_mod.compute_livability(len(species), mean_conf, activity, idx, noise_ratio)
+    lv = livability_mod.compute_livability(len(species), mean_conf, activity, idx, noise_ratio, duration_sec=dur)
 
     # 4) 合成可视化数据
     heatmap = synthesis.heatmap(y, freqs, S, activity, lv["noise"])

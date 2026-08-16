@@ -45,6 +45,10 @@ export default function RegionSummary({ summary }) {
     score != null && noise != null
       ? livabilityDesc({ livability: { score, noise } })
       : '';
+  // 置信度：旧数据（无 confidence）缺失时整行不渲染（向前兼容）
+  const conf = typeof lv.confidence === 'number' ? lv.confidence : null;
+  const confLabel = conf != null && typeof lv.confidenceLabel === 'string' ? lv.confidenceLabel : null;
+  const confTone = { '高': 'good', '中': 'mid', '低': 'bad' };
 
   const species = sortedSpecies(summary.species);
   const indices = Array.isArray(summary.indices) ? summary.indices : [];
@@ -68,6 +72,13 @@ export default function RegionSummary({ summary }) {
           <span className="grade">
             {g.zh} · {g.en}
           </span>
+          {conf != null && confLabel ? (
+            <div className="conf-badge">
+              <Chip tone={confTone[confLabel] || 'default'} className="!px-2 !py-0.5">
+                置信度 {confLabel}（{Math.round(conf * 100)}%）
+              </Chip>
+            </div>
+          ) : null}
           {desc ? <p>{desc}</p> : null}
         </div>
       </div>

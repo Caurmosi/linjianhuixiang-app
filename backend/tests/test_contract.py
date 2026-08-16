@@ -70,6 +70,11 @@ def test_livability_contract(client):
     assert 0 <= data["score"] <= 100
     assert data["grade"] in {"宜居", "一般", "受压"}
     assert data["gradeEn"] in {"Good", "Moderate", "Stressed"}
+    # 置信度字段（新增契约）：number 0-1 + 高/中/低
+    assert "confidence" in data, "livability 缺少 confidence 字段"
+    assert "confidenceLabel" in data, "livability 缺少 confidenceLabel 字段"
+    assert isinstance(data["confidence"], (int, float)) and 0.0 <= data["confidence"] <= 1.0
+    assert data["confidenceLabel"] in {"高", "中", "低"}
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +167,11 @@ def test_analyze_bird_sample_contract(client):
     for f in ["score", "bio", "sound", "noise"]:
         assert 0 <= lv[f] <= 100
     assert 0 <= lv["noise"] <= 100
+    # 置信度：analyze 主链路应返回 confidence/confidenceLabel（含 0-1 数值与中文档位）
+    assert "confidence" in lv, "analyze.livability 缺少 confidence"
+    assert "confidenceLabel" in lv, "analyze.livability 缺少 confidenceLabel"
+    assert isinstance(lv["confidence"], (int, float)) and 0.0 <= lv["confidence"] <= 1.0
+    assert lv["confidenceLabel"] in {"高", "中", "低"}
     assert data["speciesCount"] == len(data["species"])
     assert data["recording"] == "测试_清晨.wav"
     # 合成鸟鸣样本：启发式引擎应识别出物种；真实 BirdNET 对合成啁啾可能无匹配（shape 校验恒定）

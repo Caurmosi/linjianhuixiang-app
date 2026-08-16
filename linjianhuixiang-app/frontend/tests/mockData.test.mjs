@@ -80,6 +80,9 @@ test('LIVABILITY: 字段完整，数值在合理区间', () => {
     assert.ok(typeof LIVABILITY[k] === 'number' && LIVABILITY[k] >= 0 && LIVABILITY[k] <= 100, `${k} 应在 [0,100]`);
   }
   assert.ok(LIVABILITY.noise < LIVABILITY.bio, '演示数据中噪声占比应低于生物多样性（声景偏向健康）');
+  // 置信度：number 0-1 + 高/中/低档位
+  assert.ok(typeof LIVABILITY.confidence === 'number' && LIVABILITY.confidence >= 0 && LIVABILITY.confidence <= 1, 'confidence 应在 [0,1]');
+  assert.ok(['高', '中', '低'].includes(LIVABILITY.confidenceLabel), 'confidenceLabel 应为 高/中/低');
 });
 
 test('HEATMAP: 4 行 × 12 列，单元格均为 [0,1] 数值', () => {
@@ -245,7 +248,16 @@ test('buildAnalysis: overrides 生效（数量/宜居度/录音名覆盖），�
   assert.equal(a.recording, '滨江绿地_午后.mp3');
   assert.equal(a.speciesCount, 6);
   assert.equal(a.species.length, 6, 'species 应与 speciesCount 自洽（截断到 6）');
-  assert.deepEqual(a.livability, { score: 54, grade: '一般', gradeEn: 'Moderate', bio: 62, sound: 45, noise: 51 });
+  assert.deepEqual(a.livability, {
+    score: 54,
+    grade: '一般',
+    gradeEn: 'Moderate',
+    bio: 62,
+    sound: 45,
+    noise: 51,
+    confidence: 0.72,
+    confidenceLabel: '高',
+  });
 });
 
 test('buildAnalysis: A1 回归 —— 局部 livability 覆盖不丢失默认字段 bio/sound/grade/gradeEn', () => {
@@ -256,6 +268,37 @@ test('buildAnalysis: A1 回归 —— 局部 livability 覆盖不丢失默认字
   assert.equal(a.livability.sound, LIVABILITY.sound);
   assert.equal(a.livability.grade, LIVABILITY.grade);
   assert.equal(a.livability.gradeEn, LIVABILITY.gradeEn);
+});
+
+test('buildAnalysis: 默认 livability 携带 confidence/confidenceLabel（缺失时补默认）', () => {
+  const plain = buildAnalysis('x.wav');
+  assert.equal(plain.livability.confidence, LIVABILITY.confidence, '未覆盖 confidence 时应补默认值');
+  assert.equal(plain.livability.confidenceLabel, LIVABILITY.confidenceLabel);
+  // 仅覆盖 score 的局部 livability 也补默认置信度
+  const partial = buildAnalysis('x.wav', { livability: { score: 60 } });
+  assert.equal(partial.livability.confidence, LIVABILITY.confidence);
+  assert.equal(partial.livability.confidenceLabel, '高');
+});
+
+test('buildAnalysis: overrides 含 confidence 则用，confidenceLabel 恒与数值一致（阈值分档）', () => {
+  const mid = buildAnalysis('x.wav', { livability: { score: 82, noise: 22, confidence: 0.55, confidenceLabel: '高' } });
+  assert.equal(mid.livability.confidence, 0.55, 'overrides confidence 应生效');
+  assert.equal(mid.livability.confidenceLabel, '中', 'label 由 confidence 推导，不受脏覆盖影响');
+  // 非法 confidence clamp 到 [0,1]
+  const clamped = buildAnalysis('x.wav', { livability: { confidence: 1.5 } });
+  assert.equal(clamped.livability.confidence, 1);
+  assert.equal(clamped.livability.confidenceLabel, '高');
+  // 低置信度 → 低
+  const low = buildAnalysis('x.wav', { livability: { confidence: 0.2 } });
+  assert.equal(low.livability.confidence, 0.2);
+  assert.equal(low.livability.confidenceLabel, '低');
+});
+
+test('HISTORY: 各条 analysis 快照 livability 均携带 confidence/confidenceLabel', () => {
+  for (const h of HISTORY) {
+    assert.ok(typeof h.analysis.livability.confidence === 'number', `${h.name} analysis.livability 缺少 confidence`);
+    assert.ok(['高', '中', '低'].includes(h.analysis.livability.confidenceLabel), `${h.name} analysis.livability 缺少 confidenceLabel`);
+  }
 });
 
 test('buildAnalysis: A3 自洽 —— speciesCount 截断 species，超过 SPECIES 长度时取全部且保留计数', () => {

@@ -163,6 +163,11 @@ export function gradeOf(score) {
   return useApi() ? apiService.gradeOf(score) : mockData.gradeOf(score);
 }
 
+/** 置信度等级（转发 mockData 实现；阈值 ≥0.7 高 / ≥0.4 中 / <0.4 低） */
+export function confidenceLabelOf(confidence) {
+  return mockData.confidenceLabelOf(confidence);
+}
+
 /** 宜居度描述文案（转发 mockData 实现） */
 export function livabilityDesc(analysis) {
   return useApi() ? apiService.livabilityDesc(analysis) : mockData.livabilityDesc(analysis);

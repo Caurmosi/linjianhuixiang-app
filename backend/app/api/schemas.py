@@ -32,6 +32,9 @@ class Livability(BaseModel):
     bio: int = Field(ge=0, le=100)
     sound: int = Field(ge=0, le=100)
     noise: int = Field(ge=0, le=100)
+    # 评分可信度（0-1 两位小数 + 高/中/低档位）；旧数据缺失时回落默认（向前兼容）
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidenceLabel: Literal["高", "中", "低"] = "低"
 
 
 class MapPoint(BaseModel):

@@ -5,10 +5,14 @@
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Ring from '../components/Ring';
+import Chip from '../components/ui/Chip';
 import WaveformChart from '../components/charts/WaveformChart';
 import { gradeOf, livabilityDesc } from '../data/repository';
 import { exportReport } from '../utils/exportReport';
 import { IconShare, IconDoc, IconChart, IconHeat, IconGlobe } from '../components/icons';
+
+/** 置信度档位 → Chip tone（高=绿 / 中=琥珀 / 低=红），贴合设计 token */
+const CONF_TONE = { '高': 'good', '中': 'mid', '低': 'bad' };
 
 export default function ResultsScreen() {
   const { state, dispatch } = useApp();
@@ -16,6 +20,9 @@ export default function ResultsScreen() {
   const score = a.livability.score;
   const g = gradeOf(score);
   const desc = livabilityDesc(a);
+  // 置信度：旧数据（无 confidence）缺失时整行不渲染（向前兼容）
+  const conf = a.livability && typeof a.livability.confidence === 'number' ? a.livability.confidence : null;
+  const confLabel = conf != null && a.livability.confidenceLabel ? a.livability.confidenceLabel : null;
 
   const go = (screen) => dispatch({ type: 'GO', screen });
   const share = async () => {
@@ -49,6 +56,13 @@ export default function ResultsScreen() {
           <span className="grade">
             {g.zh} · {g.en}
           </span>
+          {conf != null && confLabel ? (
+            <div className="conf-badge">
+              <Chip tone={CONF_TONE[confLabel] || 'default'} className="!px-2 !py-0.5">
+                置信度 {confLabel}（{Math.round(conf * 100)}%）
+              </Chip>
+            </div>
+          ) : null}
           <p>{desc}</p>
         </div>
       </div>

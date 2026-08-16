@@ -92,6 +92,79 @@ test('livability: 等级边界与平均分一致（≥70 宜居 / ≥50 一般 /
   assert.equal(bad.livability.gradeEn, 'Stressed');
 });
 
+// ============================================================
+// 综合置信度：各段 confidence 按 durationSec 加权平均（阈值分档）
+// ============================================================
+
+/** 构造带指定 confidence 与 durationSec 的完整 analysis（label 由 buildAnalysis 从 confidence 推导） */
+function makeConfAnalysis(name, confidence, durationSec, opts = {}) {
+  return buildAnalysis(name, {
+    speciesCount: opts.speciesCount ?? 5,
+    livability: { score: opts.score ?? 70, noise: 30, bio: 75, sound: 62, confidence },
+    durationSec,
+  });
+}
+
+test('confidence: 各段按 durationSec 加权平均（round 2），档位正确', () => {
+  // (0.8*30 + 0.4*60) / (30+60) = 48/90 ≈ 0.5333 → 0.53 → 中
+  const s = aggregateAnalyses([
+    makeConfAnalysis('段A.wav', 0.8, 30),
+    makeConfAnalysis('段B.wav', 0.4, 60),
+  ]);
+  assert.equal(s.livability.confidence, 0.53);
+  assert.equal(s.livability.confidenceLabel, '中');
+});
+
+test('confidence: 无 confidence 的旧数据段忽略，仅参与有 confidence 的段平均', () => {
+  // 旧数据段：绕过 buildAnalysis（其会自动补默认 confidence），用原始快照对象模拟——有时长但无 confidence
+  const old = { ...buildAnalysis('旧段.wav'), durationSec: 60, livability: { score: 55, noise: 45, bio: 60, sound: 50 } };
+  const s = aggregateAnalyses([makeConfAnalysis('新段.wav', 0.9, 30), old]);
+  assert.equal(s.livability.confidence, 0.9, '旧段无 confidence 应被忽略，不参与平均');
+  assert.equal(s.livability.confidenceLabel, '高');
+});
+
+test('confidence: 全部段缺 confidence → 回退安全值 0.3/低', () => {
+  // 全为旧数据（原始快照无 confidence 字段，未经过 buildAnalysis 补默认）
+  const oldA = { recording: 'a.wav', durationSec: 30, livability: { score: 60, noise: 35, bio: 65, sound: 55 } };
+  const oldB = { recording: 'b.wav', durationSec: 40, livability: { score: 55, noise: 40, bio: 60, sound: 50 } };
+  const s = aggregateAnalyses([oldA, oldB]);
+  assert.equal(s.livability.confidence, 0.3);
+  assert.equal(s.livability.confidenceLabel, '低');
+});
+
+test('confidence: 有 confidence 但各段缺时长 → 退化为简单平均', () => {
+  // (0.8 + 0.5) / 2 = 0.65 → 中
+  const s = aggregateAnalyses([
+    makeConfAnalysis('a.wav', 0.8, undefined),
+    makeConfAnalysis('b.wav', 0.5, undefined),
+  ]);
+  assert.equal(s.livability.confidence, 0.65);
+  assert.equal(s.livability.confidenceLabel, '中');
+});
+
+test('confidence: 阈值分档边界（加权结果 ≥0.7 高 / ≥0.4 中 / <0.4 低）', () => {
+  // 0.9 与 0.8 等权 → 0.85 → 高
+  const high = aggregateAnalyses([
+    makeConfAnalysis('a.wav', 0.9, 30),
+    makeConfAnalysis('b.wav', 0.8, 30),
+  ]);
+  assert.equal(high.livability.confidence, 0.85);
+  assert.equal(high.livability.confidenceLabel, '高');
+  // 0.2 与 0.1 等权 → 0.15 → 低
+  const low = aggregateAnalyses([
+    makeConfAnalysis('a.wav', 0.2, 30),
+    makeConfAnalysis('b.wav', 0.1, 30),
+  ]);
+  assert.equal(low.livability.confidence, 0.15);
+  assert.equal(low.livability.confidenceLabel, '低');
+});
+
+test('confidence: 空数组摘要携带回退安全值 0.3/低（与全缺一致）', () => {
+  const empty = aggregateAnalyses([]);
+  assert.equal(empty.livability.confidence, 0.3);
+  assert.equal(empty.livability.confidenceLabel, '低');
+});
+
 test('indices: 四个指数取平均，结构对齐单 analysis.indices（key/name/display/pct/desc）', () => {
   const x1 = buildAnalysis('x1.wav');
   x1.indices = INDICES.map((i) => ({ ...i, pct: i.pct }));

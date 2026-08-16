@@ -45,6 +45,8 @@ BASELINE_LIVABILITY = {
     "bio": 76,
     "sound": 60,
     "noise": 34,
+    "confidence": 0.72,
+    "confidenceLabel": "高",
 }
 
 BASELINE_HEATMAP = [

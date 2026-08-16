@@ -14,7 +14,7 @@
  *  - waveform 取最长录音的波形（拼接成本高且价值有限，取最长一段并注释说明重合度取舍）；
  *  - durationSec 为各段时长之和（各段 analysis.durationSec 由录音界面注入，缺失按 0 计）。
  */
-import { gradeOf } from '../data/repository.js';
+import { gradeOf, confidenceLabelOf } from '../data/repository.js';
 import { wgs84ToGcj02 } from '../components/map/mapUtils.js';
 
 /** 每个样点的宜居度等级色（与 MapScreen / gradeOf 一致） */
@@ -177,6 +177,32 @@ function livabilityOf(a) {
     : {};
 }
 
+/**
+ * 综合置信度：各段 confidence 按 durationSec 加权平均（round 2），档位同阈值。
+ *  - 仅「有 confidence 的段」参与平均，旧数据（无 confidence）段忽略；
+ *  - 各段 durationSec 缺失/非正时权重为 0，全部为 0 则退化为简单平均；
+ *  - 空数组 / 全部段无 confidence：无输入质量信号可依，回退保守安全值 0.3/'低'。
+ */
+function aggregateConfidence(analyses) {
+  const parts = analyses
+    .map((a) => {
+      const lv = livabilityOf(a);
+      return { conf: lv.confidence, dur: Number(a && a.durationSec) || 0 };
+    })
+    .filter((p) => typeof p.conf === 'number' && Number.isFinite(p.conf));
+  if (parts.length === 0) {
+    // 全缺 confidence（旧数据）或空输入 → 保守安全值（注释见上）
+    return { confidence: 0.3, confidenceLabel: '低' };
+  }
+  const totalWeight = parts.reduce((s, p) => s + Math.max(0, p.dur), 0);
+  const confidence =
+    totalWeight > 0
+      ? parts.reduce((s, p) => s + p.conf * Math.max(0, p.dur), 0) / totalWeight
+      : mean(parts.map((p) => p.conf));
+  const rounded = Number(confidence.toFixed(2));
+  return { confidence: rounded, confidenceLabel: confidenceLabelOf(rounded) };
+}
+
 /** 最小安全摘要（空输入 / 聚合过程异常时返回，绝不抛错、保证地图综合页可渲染） */
 function emptySummary(n) {
   return {
@@ -184,7 +210,16 @@ function emptySummary(n) {
     speciesCount: 0,
     species: [],
     indices: [],
-    livability: { score: 0, grade: '受压', gradeEn: 'Stressed', noise: 0, bio: 0, sound: 0 },
+    livability: {
+      score: 0,
+      grade: '受压',
+      gradeEn: 'Stressed',
+      noise: 0,
+      bio: 0,
+      sound: 0,
+      confidence: 0.3,
+      confidenceLabel: '低',
+    },
     heatmap: Array.from({ length: 4 }, () => Array(12).fill(0)),
     mapPoints: [],
     segments: [],
@@ -222,13 +257,14 @@ export function aggregateAnalyses(analyses) {
     summary.species = species;
     summary.speciesCount = species.length;
 
-    // 宜居度：各段平均，grade 由平均 score 推导
+    // 宜居度：各段平均，grade 由平均 score 推导；confidence 按 durationSec 加权平均
     const score = Math.round(mean(list.map((a) => livabilityOf(a).score)));
     const noise = Math.round(mean(list.map((a) => livabilityOf(a).noise)));
     const bio = Math.round(mean(list.map((a) => livabilityOf(a).bio)));
     const sound = Math.round(mean(list.map((a) => livabilityOf(a).sound)));
     const g = gradeOf(score);
-    summary.livability = { score, noise, bio, sound, grade: g.zh, gradeEn: g.en };
+    const { confidence, confidenceLabel } = aggregateConfidence(list);
+    summary.livability = { score, noise, bio, sound, grade: g.zh, gradeEn: g.en, confidence, confidenceLabel };
 
     // 声学指数平均
     summary.indices = averageIndices(list);

@@ -32,6 +32,8 @@ export const LIVABILITY = {
   bio: 76, // 生物多样性
   sound: 60, // 声环境质量
   noise: 34, // 人为噪声占比
+  confidence: 0.72, // 评分可信度（0-1，两位小数）
+  confidenceLabel: '高', // 可信度档位：高/中/低
 };
 
 // 时段 × 频段 热力图（0..1 强度）
@@ -227,9 +229,23 @@ export function buildAnalysis(name, overrides = {}) {
     // overrides 展开后显式补默认（参照 livability 合并模式）：未覆盖时用演示值，避免 undefined
     waveform: rest.waveform ?? WAVEFORM,
     segmentPoints: rest.segmentPoints ?? SEGMENT_POINTS,
-    livability: { ...LIVABILITY, ...(rest.livability || {}) },
+    livability: mergeLivability(rest.livability),
   };
   return merged;
+}
+
+/**
+ * 宜居度合并：默认演示值 + overrides 局部覆盖。
+ * 置信度规则：overrides.livability 若含 confidence 则用（clamp 到 [0,1]），不含则补默认；
+ * confidenceLabel 恒由 confidence 推导，保证档位与数值一致。
+ */
+function mergeLivability(override) {
+  const base = { ...LIVABILITY, ...(override || {}) };
+  const conf =
+    typeof base.confidence === 'number' && Number.isFinite(base.confidence)
+      ? Math.max(0, Math.min(1, base.confidence))
+      : LIVABILITY.confidence;
+  return { ...base, confidence: conf, confidenceLabel: confidenceLabelOf(conf) };
 }
 
 /**
@@ -285,6 +301,13 @@ export function gradeOf(score) {
   if (score >= 70) return { zh: '宜居', en: 'Good', tone: 'good' };
   if (score >= 50) return { zh: '一般', en: 'Moderate', tone: 'mid' };
   return { zh: '受压', en: 'Stressed', tone: 'bad' };
+}
+
+/** 置信度等级：≥0.7 高 / ≥0.4 中 / <0.4 低（与后端 confidence_label_of 阈值一致） */
+export function confidenceLabelOf(confidence) {
+  if (confidence >= 0.7) return '高';
+  if (confidence >= 0.4) return '中';
+  return '低';
 }
 
 export function livabilityDesc(analysis) {
