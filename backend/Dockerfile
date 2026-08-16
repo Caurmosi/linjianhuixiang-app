@@ -20,8 +20,12 @@ COPY app ./app
 COPY scripts ./scripts
 
 # 可选：构建时下载官方 BirdNET 模型（需外网，约 170MB）
+# 容错：模型下载失败不阻断构建——服务自动降级启发式引擎（功能完整，仅识别精度较低）
 ARG DOWNLOAD_MODEL=false
-RUN if [ "$DOWNLOAD_MODEL" = "true" ]; then python scripts/download_birdnet_model.py --dir /app/models; fi
+RUN if [ "$DOWNLOAD_MODEL" = "true" ]; then \
+      python scripts/download_birdnet_model.py --dir /app/models \
+      || echo "::warning::BirdNET 模型下载失败，镜像将使用启发式引擎（confidence/livability 功能不受影响）"; \
+    fi
 
 ENV LJX_DATA_DIR=/app/data \
     LJX_MODELS_DIR=/app/models \
