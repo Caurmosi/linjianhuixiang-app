@@ -60,11 +60,12 @@ jobs:
       - name: Make package public
         shell: bash
         run: |
-          # 包名 = IMAGE_NAME 去掉 owner 前缀（ghcr 剥离用户名）→ linjianhuixiang-app/linjianhuixiang-backend
-          # 注意1：GitHub API 的 package_name 必须 URL 编码（斜杠 → %2F），否则 PATCH 404、镜像保持 private
+          # 包名 = 镜像地址 ghcr.io/<owner>/linjianhuixiang-app/linjianhuixiang-backend 去掉 ghcr.io/ 前缀
+          #   → caurmosi/linjianhuixiang-app/linjianhuixiang-backend（owner 前缀保留，实测 v2 端点即此路径）
+          # 注意1：GitHub API 的 package_name 必须 URL 编码（斜杠 → %2F），否则 PATCH 404
           # 注意2：PATCH /user/packages 是"当前认证用户"（github-actions bot）的包，而包实际归属 github.actor 用户
-          #        → 必须用 /users/{owner}/packages 端点，否则 bot 名下查无此包、PATCH 404、镜像保持 private
-          PKG="linjianhuixiang-app%2Flinjianhuixiang-backend"
+          #        → 必须用 /users/{owner}/packages 端点，否则 bot 名下查无此包、PATCH 404
+          PKG="${{ github.repository_owner }}%2Flinjianhuixiang-app%2Flinjianhuixiang-backend"
           echo "Setting $PKG visibility to public (owner: ${{ github.repository_owner }})..."
           HTTP_CODE=$(curl -s -o /tmp/pkg_public_resp.json -w "%{http_code}" -X PATCH \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
