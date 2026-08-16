@@ -303,9 +303,9 @@ export function gradeOf(score) {
   return { zh: '受压', en: 'Stressed', tone: 'bad' };
 }
 
-/** 置信度等级：≥0.7 高 / ≥0.4 中 / <0.4 低（与后端 confidence_label_of 阈值一致） */
+/** 置信度等级：≥0.6 高 / ≥0.4 中 / <0.4 低（与后端 confidence_label_of 阈值一致） */
 export function confidenceLabelOf(confidence) {
-  if (confidence >= 0.7) return '高';
+  if (confidence >= 0.6) return '高';
   if (confidence >= 0.4) return '中';
   return '低';
 }

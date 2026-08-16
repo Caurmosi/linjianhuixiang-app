@@ -133,16 +133,16 @@ test('confidence: 全部段缺 confidence → 回退安全值 0.3/低', () => {
 });
 
 test('confidence: 有 confidence 但各段缺时长 → 退化为简单平均', () => {
-  // (0.8 + 0.5) / 2 = 0.65 → 中
+  // (0.8 + 0.5) / 2 = 0.65 → 高
   const s = aggregateAnalyses([
     makeConfAnalysis('a.wav', 0.8, undefined),
     makeConfAnalysis('b.wav', 0.5, undefined),
   ]);
   assert.equal(s.livability.confidence, 0.65);
-  assert.equal(s.livability.confidenceLabel, '中');
+  assert.equal(s.livability.confidenceLabel, '高');
 });
 
-test('confidence: 阈值分档边界（加权结果 ≥0.7 高 / ≥0.4 中 / <0.4 低）', () => {
+test('confidence: 阈值分档边界（加权结果 ≥0.6 高 / ≥0.4 中 / <0.4 低）', () => {
   // 0.9 与 0.8 等权 → 0.85 → 高
   const high = aggregateAnalyses([
     makeConfAnalysis('a.wav', 0.9, 30),

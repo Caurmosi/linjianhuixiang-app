@@ -3,8 +3,8 @@ test_confidence.py —— 宜居度置信度（confidence）单元测试
 
 验证：
   - confidence_of 公式权重正确（四信号合成、clamp、round 2）；
-  - 语义场景：无鸟声环境音 → 低；清晰鸟鸣 → 高；短录音 → 中偏低；
-  - 等级阈值分档边界（0.7 / 0.4）；
+  - 语义场景：无鸟声环境音 → 低；清晰鸟鸣 → 高；短录音 → 中档；
+  - 等级阈值分档边界（0.6 / 0.4）；
   - compute_livability 返回值携带 confidence / confidenceLabel；
   - duration_sec=None 按 0 处理（duration 项 = 0）。
 """
@@ -26,25 +26,26 @@ def _indices():
 # confidence_of 公式
 # ---------------------------------------------------------------------------
 def test_confidence_of_formula_high_bird():
-    # 清晰鸟鸣：activity≈0.8、mean_conf≈0.8、species≥5、时长≥60s
+    # 清晰鸟鸣：activity≈0.8、mean_conf≈0.8、species≥3、时长≥30s
     # = 0.35*0.8 + 0.30*0.8 + 0.20*1 + 0.15*1 = 0.28+0.24+0.20+0.15 = 0.87
     assert confidence_of(0.8, 0.8, 5, 60) == 0.87
     assert confidence_of(0.8, 0.8, 9, 120) == 0.87, "species/duration 超上限应封顶，不超 1"
 
 
 def test_confidence_of_no_bird_ambient():
-    # 无鸟声环境音（activity=0、species=0、mean_conf=0），满时长录音 60s → 仅时长项 0.15
+    # 无鸟声环境音（activity=0、species=0、mean_conf=0），满时长录音 60s → 仅时长项 0.15（60s 已封顶）
     assert confidence_of(0.0, 0.0, 0, 60) == 0.15
-    # 更短的"无鸟声"录音：0.35*0 + 0.30*0 + 0.20*0 + 0.15*(30/60) = 0.075 → 0.07
-    assert confidence_of(0.0, 0.0, 0, 30) == 0.07
+    # 30s 无鸟声录音：0.35*0 + 0.30*0 + 0.20*0 + 0.15*(30/30) = 0.15（30s 已封顶）
+    assert confidence_of(0.0, 0.0, 0, 30) == 0.15
 
 
 def test_confidence_of_short_recording():
-    # 短录音（5s、少量识别、中等活动）：duration 项低 → 整体中偏低
+    # 短录音（5s、少量识别、中等活动）：species 项 2/3≈0.67、duration 项 5/30≈0.17 → 中档
     c = confidence_of(0.5, 0.6, 2, 5)
-    expected = round(0.35 * 0.5 + 0.30 * 0.6 + 0.20 * min(1, 2 / 5) + 0.15 * min(1, 5 / 60), 2)
+    expected = round(0.35 * 0.5 + 0.30 * 0.6 + 0.20 * min(1, 2 / 3) + 0.15 * min(1, 5 / 30), 2)
     assert c == expected
-    assert c < 0.5, "短录音置信度应中偏低"
+    # 0.175+0.18+0.1333+0.025 = 0.5133 → 0.51 → 中档
+    assert c == 0.51, "短录音置信度应落中档（0.4 ≤ c < 0.6）"
 
 
 def test_confidence_of_clamped_and_rounded():
@@ -58,16 +59,18 @@ def test_confidence_of_clamped_and_rounded():
 
 def test_confidence_of_duration_none_is_zero():
     assert confidence_of(0.5, 0.6, 3, None) == confidence_of(0.5, 0.6, 3, 0)
-    assert confidence_of(0.5, 0.6, 3, None) == round(0.35 * 0.5 + 0.30 * 0.6 + 0.20 * 0.6 + 0.15 * 0.0, 2)
+    assert confidence_of(0.5, 0.6, 3, None) == round(0.35 * 0.5 + 0.30 * 0.6 + 0.20 * 1.0 + 0.15 * 0.0, 2)
 
 
 # ---------------------------------------------------------------------------
-# 等级分档（≥0.7 高 / ≥0.4 中 / <0.4 低）
+# 等级分档（≥0.6 高 / ≥0.4 中 / <0.4 低）
 # ---------------------------------------------------------------------------
 def test_confidence_label_boundaries():
     assert confidence_label_of(0.7) == "高"
     assert confidence_label_of(0.87) == "高"
-    assert confidence_label_of(0.69) == "中"
+    assert confidence_label_of(0.69) == "高"
+    assert confidence_label_of(0.6) == "高"
+    assert confidence_label_of(0.59) == "中"
     assert confidence_label_of(0.4) == "中"
     assert confidence_label_of(0.45) == "中"
     assert confidence_label_of(0.39) == "低"
@@ -91,9 +94,9 @@ def test_compute_livability_includes_confidence():
 
 
 def test_compute_livability_confidence_consistency():
-    # 高分场景 → 高置信度档位
+    # 高分场景 → 高置信度档位（新公式 0.35*0.85+0.30*0.85+0.20*1+0.15*1=0.90 → 高）
     lv = compute_livability(6, 0.85, 0.85, _indices(), 25.0, duration_sec=90)
-    assert lv["confidence"] >= 0.7
+    assert lv["confidence"] >= 0.6
     assert lv["confidenceLabel"] == "高"
     # 低活动无物种 → 低置信度档位
     low = compute_livability(0, 0.0, 0.0, _indices(), 40.0, duration_sec=60)
