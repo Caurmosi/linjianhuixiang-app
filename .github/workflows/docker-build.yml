@@ -61,18 +61,20 @@ jobs:
         shell: bash
         run: |
           # 包名 = IMAGE_NAME 去掉 owner 前缀（ghcr 剥离用户名）→ linjianhuixiang-app/linjianhuixiang-backend
-          # 注意：GitHub API 的 package_name 必须 URL 编码（斜杠 → %2F），否则 PATCH 404、镜像保持 private
+          # 注意1：GitHub API 的 package_name 必须 URL 编码（斜杠 → %2F），否则 PATCH 404、镜像保持 private
+          # 注意2：PATCH /user/packages 是"当前认证用户"（github-actions bot）的包，而包实际归属 github.actor 用户
+          #        → 必须用 /users/{owner}/packages 端点，否则 bot 名下查无此包、PATCH 404、镜像保持 private
           PKG="linjianhuixiang-app%2Flinjianhuixiang-backend"
-          echo "Setting $PKG visibility to public..."
+          echo "Setting $PKG visibility to public (owner: ${{ github.repository_owner }})..."
           HTTP_CODE=$(curl -s -o /tmp/pkg_public_resp.json -w "%{http_code}" -X PATCH \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/user/packages/container/$PKG" \
+            "https://api.github.com/users/${{ github.repository_owner }}/packages/container/$PKG" \
             -d '{"visibility":"public"}')
           echo "HTTP $HTTP_CODE"
           cat /tmp/pkg_public_resp.json | head -c 300
           echo ""
-          if [ "$HTTP_CODE" != "200" ]; then
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "204" ]; then
             echo "::warning::设 public 失败——Sealos/Zeabur 匿名拉取会失败，请到仓库 Packages 页签手动设为 Public"
           fi
           echo "Done."
