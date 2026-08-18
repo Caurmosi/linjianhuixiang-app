@@ -9,7 +9,8 @@ import { humanizeBackendError } from '../utils/errorText';
 import Button from '../components/ui/Button';
 import Chip from '../components/ui/Chip';
 import { isMockMode } from '../config/dataConfig.js';
-import { IconLeaf, IconUpload, IconPlay, IconMic, IconClock, IconBird, IconChevronRight, IconInfo } from '../components/icons';
+import { IconLeaf, IconUpload, IconPlay, IconMic, IconClock, IconBird, IconChevronRight, IconInfo, IconMap } from '../components/icons';
+import { openExternal, PUBLIC_MAP_URL } from '../utils/openExternal.js';
 
 export default function HomeScreen() {
   const { state, dispatch } = useApp();
@@ -109,6 +110,23 @@ export default function HomeScreen() {
       {/* 数据源模式徽标（演示模式 / 真实识别） */}
       <div className="mb-3 flex justify-center">
         <Chip tone={mockMode ? 'mid' : 'good'}>{mockMode ? '演示模式' : '真实识别'}</Chip>
+      </div>
+
+      {/* 公共地图 —— 一键跳转网页（独立托管，系统浏览器打开） */}
+      <div
+        className="map-entry-card"
+        onClick={() => openExternal(PUBLIC_MAP_URL)}
+        role="button"
+        tabIndex={0}
+      >
+        <div className="up">
+          <IconMap size={26} />
+        </div>
+        <div className="txt">
+          <h3>公共地图</h3>
+          <p>查看所有人上传的鸟类宜居度</p>
+        </div>
+        <IconChevronRight size={20} className="chev" />
       </div>
 
       {/* 实时录音 —— 主卡片（UI 最大） */}

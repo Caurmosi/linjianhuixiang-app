@@ -2068,3 +2068,52 @@ input[type='range']::-moz-range-thumb {
   color: var(--ink-faint);
   line-height: 1.6;
 }
+
+/* 公共地图入口卡（复用导入卡横向样式） */
+.map-entry-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(155deg, #fff, #eff4fb);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease);
+}
+.map-entry-card:active {
+  transform: scale(0.99);
+}
+.map-entry-card .up {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #e3edf8;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.map-entry-card .up svg {
+  width: 24px;
+  height: 24px;
+  stroke: #185fa5;
+}
+.map-entry-card .txt {
+  min-width: 0;
+  flex: 1;
+}
+.map-entry-card .txt h3 {
+  font-size: 15px;
+  font-weight: 700;
+}
+.map-entry-card .txt p {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+.map-entry-card .chev {
+  color: var(--ink-faint);
+  flex: none;
+}

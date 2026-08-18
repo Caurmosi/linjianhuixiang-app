@@ -2,10 +2,12 @@ package com.linjianhuixiang.app
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.media.MediaRecorder
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -63,6 +65,19 @@ class WebAppInterface(
     @JavascriptInterface
     fun toast(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    @JavascriptInterface
+    fun openExternal(url: String) {
+        // 用系统浏览器打开外部链接（公共地图网页等），避免在 WebView 内嵌套跳转
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "openExternal failed: ${e.message}", e)
+            Toast.makeText(context, "无法打开链接", Toast.LENGTH_SHORT).show()
+        }
     }
 
     @JavascriptInterface
