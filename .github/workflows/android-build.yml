@@ -22,6 +22,9 @@ jobs:
         run: |
           npm install
           npm run build
+        env:
+          # 默认后端地址写入构建产物：安装即连云端（用户仍可在设置页改，localStorage 优先）
+          VITE_API_BASE: https://uegbddmczvrm.cloud.sealos.io
 
       - name: Sync dist → Android assets
         run: |
