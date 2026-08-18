@@ -34,12 +34,12 @@ const MAX_SAMPLES = 20;
 /** 容器尺寸未就绪时的最大重试次数 */
 const MAX_SIZE_RETRY = 4;
 
-/** 高德栅格瓦片（无 key），webrd0{1-4} 四子域均衡请求 */
+/** 高德栅格瓦片：经后端代理（/api/tiles），解决 CORS + 防盗链 404（必须 lang=zh_cn&size=1&scale=1） */
 const AMAP_TILE_URLS = [
-  'https://webrd01.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}',
-  'https://webrd02.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}',
-  'https://webrd03.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}',
-  'https://webrd04.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}',
+  `${API_BASE}/api/tiles/{z}/{x}/{y}?sub=1`,
+  `${API_BASE}/api/tiles/{z}/{x}/{y}?sub=2`,
+  `${API_BASE}/api/tiles/{z}/{x}/{y}?sub=3`,
+  `${API_BASE}/api/tiles/{z}/{x}/{y}?sub=4`,
 ];
 
 const CLUSTER_SOURCE_ID = 'ljx-clusters-source';

@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 import requests
 import numpy as np
-from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Response, UploadFile
 
 from .. import config
 from ..core import audio, birdnet, dsp, indices as indices_mod, livability as livability_mod
@@ -669,3 +669,36 @@ def delete_public_record(
         raise ApiError(403, "无权删除他人记录", "只能撤回自己的公开记录")
     db.delete_public_record(record_id)
     return {"ok": True, "id": record_id}
+
+
+# ---------------------------------------------------------------------------
+# 高德栅格瓦片代理（/api/tiles/...）
+# 背景：高德瓦片服务器（webrd0X.is.autonavi.com）不返回 CORS 头，
+#       公共地图网页（独立托管域名）在浏览器里直接加载会被 CORS 拦截；
+#       由后端代理转发则无跨域限制，且可带 UA/Referer 规避防盗链。
+# 用法：网页 raster source 指向 {API_BASE}/api/tiles/{z}/{x}/{y}
+# ---------------------------------------------------------------------------
+_TILE_SUBDOMAINS = ["webrd01", "webrd02", "webrd03", "webrd04"]
+_TILE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+    "Referer": "https://www.amap.com/",
+}
+
+
+@router.get("/api/tiles/{z}/{x}/{y}", tags=["map"])
+def proxy_tile(z: int, x: int, y: int) -> Response:
+    """代理高德栅格瓦片（style=7 路网）。z 1-19，防滥用限制。"""
+    if not (1 <= z <= 19 and 0 <= x < (1 << z) and 0 <= y < (1 << z)):
+        raise HTTPException(status_code=400, detail="瓦片坐标越界")
+    sub = _TILE_SUBDOMAINS[(x + y + z) % len(_TILE_SUBDOMAINS)]
+    # 注意：lang=zh_cn&size=1&scale=1 必须齐全，否则高德返回 404
+    url = (
+        f"https://{sub}.is.autonavi.com/appmaptile?"
+        f"lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}"
+    )
+    try:
+        resp = requests.get(url, headers=_TILE_HEADERS, timeout=8)
+        resp.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"瓦片代理失败: {exc}") from exc
+    return Response(content=resp.content, media_type="image/png")

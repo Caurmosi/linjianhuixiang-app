@@ -247,3 +247,35 @@ def test_delete_public_record(client):
 
     r = client.delete(f"/api/public/records/{rec_id}", headers=_auth(token))
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 高德瓦片代理（/api/tiles）
+# ---------------------------------------------------------------------------
+def test_tiles_out_of_range(client):
+    """瓦片坐标越界 → 400。"""
+    assert client.get("/api/tiles/20/0/0").status_code == 400
+    assert client.get("/api/tiles/0/0/0").status_code == 400
+
+
+def test_tiles_proxy_ok(client, monkeypatch):
+    """代理转发：上游返回 PNG → 200 image/png。"""
+    class _Resp:
+        content = b"\x89PNG\r\n\x1a\nfake"
+        def raise_for_status(self):
+            return None
+    import requests as _requests
+    monkeypatch.setattr(_requests, "get", lambda *a, **k: _Resp())
+    r = client.get("/api/tiles/12/3414/1684")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/png")
+    assert r.content.startswith(b"\x89PNG")
+
+
+def test_tiles_proxy_upstream_error(client, monkeypatch):
+    """上游失败 → 502。"""
+    def _boom(*a, **k):
+        raise RuntimeError("upstream down")
+    import requests as _requests
+    monkeypatch.setattr(_requests, "get", _boom)
+    assert client.get("/api/tiles/12/3414/1684").status_code == 502
