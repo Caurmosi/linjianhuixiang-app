@@ -659,50 +659,53 @@ export default function App() {
     }
   };
 
-  /** 应用检索/筛选：地区名 → 先 geocode 定位（flyTo）再按 region 过滤；纯评分/时间 → 直接过滤 */
-  const applyFilters = useCallback(async () => {
-    const map = mapRef.current;
-    const f = filtersRef.current;
-    const region = (f.region || '').trim();
-    const regionOnly = region && !f.minScore && !f.maxScore && f.range === 'all';
+  /** 应用检索/筛选：地区名 → 先 geocode 定位（flyTo）再按 region 过滤；纯评分/时间 → 直接过滤
+   *  regionOverride：搜索框输入后立刻回车时，用输入框实时值（避免 state/ref 未同步读到旧值） */
+  const applyFilters = useCallback(
+    async (regionOverride) => {
+      const map = mapRef.current;
+      const f = filtersRef.current;
+      const region = (regionOverride != null ? String(regionOverride).trim() : (f.region || '').trim());
+      const doFetch = (bbox, updateTotal) => loadClusters(bbox || worldBbox(), { updateTotal });
 
-    const refreshInView = (bbox) => {
-      loadClusters(bbox || worldBbox(), { updateTotal: true });
-    };
-
-    if (region) {
-      let results = [];
-      try {
-        const data = await geocodeApi(region);
-        results = data.results || [];
-      } catch (e) {
-        results = [];
-      }
-      if (!results || results.length === 0) {
-        setToastMsg(`未找到该地点：${region}`);
-        setTimeout(() => setToastMsg(null), 3200);
-        // 仍按地区名过滤（可能空态），不定位
-        refreshInView(map && mapLoadedRef.current ? currentViewportBbox(map) : worldBbox());
+      if (region) {
+        let results = [];
+        try {
+          const data = await geocodeApi(region);
+          results = data.results || [];
+        } catch (e) {
+          results = [];
+        }
+        if (!results || results.length === 0) {
+          setToastMsg(`未找到该地点：${region}`);
+          setTimeout(() => setToastMsg(null), 3200);
+          doFetch(map && mapLoadedRef.current ? expandBbox(currentViewportBbox(map)) : worldBbox(), true);
+          return;
+        }
+        const hit = results[0];
+        if (map && mapLoadedRef.current) {
+          map.flyTo({ center: [hit.lng, hit.lat], zoom: 12, essential: true, duration: 1200 });
+          // flyTo 动画结束后，按新视野 bbox + region 过滤拉取（不依赖 moveend 时序）
+          setTimeout(() => {
+            const b = mapRef.current && mapRef.current.getBounds();
+            if (b) {
+              doFetch(
+                expandBbox({ minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() }),
+                true
+              );
+            }
+          }, 1400);
+        } else {
+          doFetch(worldBbox(), true);
+        }
         return;
       }
-      const hit = results[0];
-      if (map && mapLoadedRef.current) {
-        map.flyTo({ center: [hit.lng, hit.lat], zoom: 12, essential: true, duration: 1200 });
-        // flyTo 后等 moveend（自带视口重拉）；这里延迟补一次带 updateTotal 的拉取
-        setTimeout(() => {
-          const b = mapRef.current && mapRef.current.getBounds();
-          if (b) refreshInView(expandBbox({ minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() }));
-        }, 1400);
-      } else {
-        refreshInView(worldBbox());
-      }
-      return;
-    }
 
-    // 无地区名：纯评分/时间筛选 → 当前视野直接过滤
-    refreshInView(map && mapLoadedRef.current ? currentViewportBbox(map) : worldBbox());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadClusters]);
+      // 无地区名：纯评分/时间筛选 → 当前视野直接过滤
+      doFetch(map && mapLoadedRef.current ? expandBbox(currentViewportBbox(map)) : worldBbox(), true);
+    },
+    [loadClusters]
+  );
 
   /** 清除检索/筛选：重置 + 飞回全景 */
   const clearFilters = () => {
@@ -958,7 +961,7 @@ export default function App() {
           value={filters.region}
           onChange={(e) => setFilters((f) => ({ ...f, region: e.target.value }))}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') applyFilters();
+            if (e.key === 'Enter') applyFilters(e.target.value);
           }}
         />
         <div className="ljx-filter-group">
@@ -991,7 +994,7 @@ export default function App() {
           <option value="7d">近 7 天</option>
           <option value="30d">近 30 天</option>
         </select>
-        <button type="button" className="ljx-btn" onClick={applyFilters}>
+        <button type="button" className="ljx-btn" onClick={() => applyFilters(filters.region)}>
           查询
         </button>
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={clearFilters}>
