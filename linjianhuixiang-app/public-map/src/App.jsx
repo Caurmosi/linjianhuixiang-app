@@ -251,6 +251,14 @@ function deleteRecordApi(id, token) {
   return apiRequest(`/api/public/records/${id}`, { method: 'DELETE', token });
 }
 
+/** 地名 → 坐标（GCJ-02），复用后端高德 geocode 代理 */
+async function geocodeApi(query) {
+  const res = await fetch(`${API_BASE}/api/geocode?q=${encodeURIComponent(query)}`);
+  if (!res.ok) return { results: [] };
+  const data = await res.json();
+  return { results: Array.isArray(data.results) ? data.results : [] };
+}
+
 /** 近 N 天筛选起点（ISO 日期，含当天零点） */
 function daysAgoIso(days) {
   const d = new Date();
@@ -282,6 +290,12 @@ function expandBbox(bbox) {
     minLat: bbox.minLat - dLat,
     maxLat: bbox.maxLat + dLat,
   };
+}
+
+/** 当前地图视野 bbox */
+function currentViewportBbox(map) {
+  const b = map.getBounds();
+  return { minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() };
 }
 
 /* ===================== 弹窗 HTML ===================== */
@@ -645,26 +659,65 @@ export default function App() {
     }
   };
 
-  /** 应用检索/筛选（重拉当前视野，更新 total） */
-  const applyFilters = useCallback(() => {
+  /** 应用检索/筛选：地区名 → 先 geocode 定位（flyTo）再按 region 过滤；纯评分/时间 → 直接过滤 */
+  const applyFilters = useCallback(async () => {
     const map = mapRef.current;
-    const bbox = map && mapLoadedRef.current
-      ? expandBbox({
-          minLng: map.getBounds().getWest(),
-          maxLng: map.getBounds().getEast(),
-          minLat: map.getBounds().getSouth(),
-          maxLat: map.getBounds().getNorth(),
-        })
-      : worldBbox();
-    loadClusters(bbox, { updateTotal: true });
+    const f = filtersRef.current;
+    const region = (f.region || '').trim();
+    const regionOnly = region && !f.minScore && !f.maxScore && f.range === 'all';
+
+    const refreshInView = (bbox) => {
+      loadClusters(bbox || worldBbox(), { updateTotal: true });
+    };
+
+    if (region) {
+      let results = [];
+      try {
+        const data = await geocodeApi(region);
+        results = data.results || [];
+      } catch (e) {
+        results = [];
+      }
+      if (!results || results.length === 0) {
+        setToastMsg(`未找到该地点：${region}`);
+        setTimeout(() => setToastMsg(null), 3200);
+        // 仍按地区名过滤（可能空态），不定位
+        refreshInView(map && mapLoadedRef.current ? currentViewportBbox(map) : worldBbox());
+        return;
+      }
+      const hit = results[0];
+      if (map && mapLoadedRef.current) {
+        map.flyTo({ center: [hit.lng, hit.lat], zoom: 12, essential: true, duration: 1200 });
+        // flyTo 后等 moveend（自带视口重拉）；这里延迟补一次带 updateTotal 的拉取
+        setTimeout(() => {
+          const b = mapRef.current && mapRef.current.getBounds();
+          if (b) refreshInView(expandBbox({ minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() }));
+        }, 1400);
+      } else {
+        refreshInView(worldBbox());
+      }
+      return;
+    }
+
+    // 无地区名：纯评分/时间筛选 → 当前视野直接过滤
+    refreshInView(map && mapLoadedRef.current ? currentViewportBbox(map) : worldBbox());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadClusters]);
 
-  /** 清除检索/筛选 */
+  /** 清除检索/筛选：重置 + 飞回全景 */
   const clearFilters = () => {
     setFilters({ region: '', minScore: '', maxScore: '', range: 'all' });
-    // 等 state 生效后重拉（filtersRef 在下次渲染同步；这里先清 ref 立即生效）
     filtersRef.current = { region: '', minScore: '', maxScore: '', range: 'all' };
-    applyFilters();
+    const map = mapRef.current;
+    if (map && mapLoadedRef.current) {
+      map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, essential: true, duration: 1000 });
+      setTimeout(() => {
+        const b = mapRef.current && mapRef.current.getBounds();
+        if (b) loadClusters(expandBbox({ minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() }), { updateTotal: true });
+      }, 1200);
+    } else {
+      loadClusters(worldBbox(), { updateTotal: true });
+    }
   };
 
   /* 恢复会话：页面加载时若有 pm_token → me 验证 + 拉我的记录集合（失败静默清除） */
