@@ -279,3 +279,46 @@ def test_tiles_proxy_upstream_error(client, monkeypatch):
     import requests as _requests
     monkeypatch.setattr(_requests, "get", _boom)
     assert client.get("/api/tiles/12/3414/1684").status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# 检索 / 筛选（region 模糊 / 评分区间 / 时间窗 / 样本 id）
+# ---------------------------------------------------------------------------
+def test_clusters_search_and_filter(client):
+    """region 模糊检索 + minScore/maxScore 聚合后过滤 + from/to 时间窗。"""
+    t1 = _register(client, "检索甲", "secret123")
+    t2 = _register(client, "检索乙", "secret123")
+    _upload(client, t1, regionName="西湖公园", lat=30.26, lng=120.15, score=80)
+    _upload(client, t1, regionName="西湖公园", lat=30.26, lng=120.15, score=60)
+    _upload(client, t2, regionName="杭州植物园", lat=30.26, lng=120.12, score=45)
+
+    # region 模糊：命中「西湖」→ 只含西湖公园簇
+    r = client.get("/api/public/clusters", params={"region": "西湖"})
+    assert r.status_code == 200
+    names = [c["regionName"] for c in r.json()["clusters"]]
+    assert names == ["西湖公园"]
+
+    # minScore：西湖簇均值 (80+60)/2=70 → 过滤掉 45 的植物园，且西湖保留
+    r = client.get("/api/public/clusters", params={"minScore": 50})
+    names = [c["regionName"] for c in r.json()["clusters"]]
+    assert names == ["西湖公园"]
+
+    # maxScore：45 的植物园保留，西湖 70 被过滤
+    r = client.get("/api/public/clusters", params={"maxScore": 50})
+    names = [c["regionName"] for c in r.json()["clusters"]]
+    assert names == ["杭州植物园"]
+
+    # 时间窗：from=未来 → 空
+    r = client.get("/api/public/clusters", params={"from": "2999-01-01T00:00:00Z"})
+    assert r.json()["total"] == 0
+
+
+def test_cluster_detail_samples_have_id(client):
+    """详情样本带 id（供「我的记录」删除识别）。"""
+    token = _register(client, "样本id", "secret123")
+    _upload(client, token, regionName="带id公园", lat=30.2, lng=120.1, score=66)
+    r = client.get("/api/public/clusters", params={"region": "带id公园"})
+    cid = r.json()["clusters"][0]["id"]
+    d = client.get(f"/api/public/clusters/{cid}").json()
+    assert len(d["samples"]) >= 1
+    assert isinstance(d["samples"][0]["id"], int)

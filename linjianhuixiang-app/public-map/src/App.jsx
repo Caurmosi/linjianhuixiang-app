@@ -146,8 +146,8 @@ function formatScore(value) {
 
 /* ===================== 数据请求 ===================== */
 
-/** 拉取 bbox 内聚合点；bbox 为空时后端按全局处理 */
-async function fetchClusters(bbox) {
+/** 拉取聚合点（匿名只读）：bbox + 可选检索/筛选（region/minScore/maxScore/from/to） */
+async function fetchClusters(bbox, filters = {}) {
   const params = new URLSearchParams();
   if (bbox) {
     params.set('minLng', String(Number(bbox.minLng).toFixed(6)));
@@ -155,6 +155,12 @@ async function fetchClusters(bbox) {
     params.set('minLat', String(Number(bbox.minLat).toFixed(6)));
     params.set('maxLat', String(Number(bbox.maxLat).toFixed(6)));
   }
+  const region = (filters.region || '').trim();
+  if (region) params.set('region', region);
+  if (Number.isFinite(Number(filters.minScore))) params.set('minScore', String(Number(filters.minScore)));
+  if (Number.isFinite(Number(filters.maxScore))) params.set('maxScore', String(Number(filters.maxScore)));
+  if (filters.from) params.set('from', filters.from);
+  if (filters.to) params.set('to', filters.to);
   params.set('limit', String(LIMIT));
   const url = `${API_BASE}/api/public/clusters?${params.toString()}`;
   const res = await fetch(url);
@@ -165,6 +171,91 @@ async function fetchClusters(bbox) {
     clusters: data.clusters,
     total: Number.isFinite(Number(data.total)) ? Number(data.total) : 0,
   };
+}
+
+/* ---------- 账号（与 App 同一后端 users 表，token 独立存网页 localStorage） ---------- */
+
+const TOKEN_KEY = 'pm_token';
+const USERNAME_KEY = 'pm_username';
+
+function readStoredSession() {
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const username = localStorage.getItem(USERNAME_KEY);
+    return token && username ? { token, username } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function storeSession(token, username) {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USERNAME_KEY, username);
+  } catch (e) {
+    /* 隐私模式忽略 */
+  }
+}
+
+function clearStoredSession() {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USERNAME_KEY);
+  } catch (e) {
+    /* 忽略 */
+  }
+}
+
+/** 统一请求（JSON + 可选 Bearer）；失败抛 {error, detail, status} */
+async function apiRequest(path, { method = 'GET', body, token } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (e) {
+    data = null;
+  }
+  if (!res.ok) {
+    const err = new Error((data && data.error) || `HTTP ${res.status}`);
+    err.status = res.status;
+    err.error = data && data.error;
+    err.detail = data && data.detail;
+    throw err;
+  }
+  return data;
+}
+
+function loginApi(username, password) {
+  return apiRequest('/api/auth/login', { method: 'POST', body: { username, password } });
+}
+
+function registerApi(username, password) {
+  return apiRequest('/api/auth/register', { method: 'POST', body: { username, password } });
+}
+
+function meApi(token) {
+  return apiRequest('/api/auth/me', { token });
+}
+
+function myRecordsApi(token) {
+  return apiRequest('/api/public/me', { token });
+}
+
+function deleteRecordApi(id, token) {
+  return apiRequest(`/api/public/records/${id}`, { method: 'DELETE', token });
+}
+
+/** 近 N 天筛选起点（ISO 日期，含当天零点） */
+function daysAgoIso(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10) + 'T00:00:00Z';
 }
 
 /** 拉取聚合点详情 + 样本列表（id 含 | 和 :，必须 encodeURIComponent） */
@@ -195,6 +286,10 @@ function expandBbox(bbox) {
 
 /* ===================== 弹窗 HTML ===================== */
 
+/** 垃圾桶图标（删除自己的记录） */
+const TRASH_SVG =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+
 /**
  * 构建 Popup 内容。
  * @param {object} p 聚合点 properties
@@ -202,7 +297,7 @@ function expandBbox(bbox) {
  * @param {boolean} loading 是否处于样本加载中
  * @param {string} [errorMsg] 样本加载失败提示
  */
-function buildPopupHTML(p, samples, loading, errorMsg) {
+function buildPopupHTML(p, samples, loading, errorMsg, myIds) {
   const regionName = p.regionName || '未知地区';
   const n = Number.isFinite(Number(p.n)) ? Number(p.n) : '—';
   const score = formatScore(p.score);
@@ -225,10 +320,15 @@ function buildPopupHTML(p, samples, loading, errorMsg) {
       .map((s) => {
         const isAnon = s && s.isAnonymous === true;
         const name = isAnon ? '匿名用户' : s && s.nickname ? s.nickname : '匿名用户';
+        const mine = myIds && myIds.has(s.id);
+        const delBtn = mine
+          ? `<button type="button" class="ljx-del-btn" data-sample-id="${Number(s.id)}" title="删除该记录">${TRASH_SVG}</button>`
+          : '';
         return `<div class="ljx-popup-sample">
           <span class="ljx-popup-sample-name">${escapeHtml(name)}</span>
           <span class="ljx-popup-sample-date">${formatDate(s.date)}</span>
           <span class="ljx-popup-sample-score">${formatScore(s.score)}</span>
+          ${delBtn}
         </div>`;
       })
       .join('');
@@ -270,6 +370,27 @@ export default function App() {
   const [banner, setBanner] = useState(null); // 后续刷新失败的轻提示
   const [tileError, setTileError] = useState(null); // 底图瓦片异常轻提示
 
+  // 检索 / 筛选（region 模糊 / 评分区间 / 时间窗）
+  const [filters, setFilters] = useState({ region: '', minScore: '', maxScore: '', range: 'all' });
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+
+  // 账号（与 App 互通）
+  const [user, setUser] = useState(null); // {token, username}
+  const [myIds, setMyIds] = useState(null); // Set<recordId>（null=未登录/未拉取）
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginMode, setLoginMode] = useState('login'); // login | register
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginErr, setLoginErr] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+
+  // 删除确认（样本）
+  const [delTarget, setDelTarget] = useState(null); // {id, regionName}
+  const [delPwd, setDelPwd] = useState('');
+  const [delErr, setDelErr] = useState('');
+  const [delBusy, setDelBusy] = useState(false);
+  const [toastMsg, setToastMsg] = useState(null); // 顶部轻提示
+
   // 地图状态
   const [unsupported, setUnsupported] = useState(false);
   const [mapError, setMapError] = useState(null);
@@ -286,13 +407,22 @@ export default function App() {
   const tileTimerRef = useRef(null);
   const lastMoveFetchRef = useRef(0);
   const requestSeqRef = useRef(0);
+  const myIdsRef = useRef(null); // 当前用户公开记录 id 集合（同步给弹窗闭包）
 
   /* ---------- 数据拉取 ---------- */
 
   const loadClusters = useCallback(async (bbox, { updateTotal = false } = {}) => {
     const seq = ++requestSeqRef.current;
+    const f = filtersRef.current;
+    const applied = {
+      region: f.region,
+      minScore: f.minScore === '' ? undefined : Number(f.minScore),
+      maxScore: f.maxScore === '' ? undefined : Number(f.maxScore),
+      from: f.range === '7d' ? daysAgoIso(7) : f.range === '30d' ? daysAgoIso(30) : undefined,
+      to: undefined,
+    };
     try {
-      const { clusters: list, total: t } = await fetchClusters(bbox);
+      const { clusters: list, total: t } = await fetchClusters(bbox, applied);
       if (seq !== requestSeqRef.current) return; // 过期响应丢弃
       clustersRef.current = list;
       setClusters(list);
@@ -339,7 +469,7 @@ export default function App() {
     }
   }, [loadClusters]);
 
-  /** 点击聚合点 → 弹窗（先展示概览，再异步拉样本） */
+  /** 点击聚合点 → 弹窗（先展示概览，再异步拉样本；本人样本带删除按钮） */
   const showClusterPopup = useCallback(async (map, feature) => {
     const p = feature.properties || {};
     const coords = feature.geometry.coordinates;
@@ -359,9 +489,20 @@ export default function App() {
       className: 'ljx-popup-wrap',
     })
       .setLngLat(coords)
-      .setHTML(buildPopupHTML(p, null, true))
+      .setHTML(buildPopupHTML(p, null, true, undefined, myIdsRef.current))
       .addTo(map);
     activePopupRef.current = popup;
+
+    // 删除按钮事件委托：点击 .ljx-del-btn → 打开删除确认
+    const onPopupClick = (ev) => {
+      const btn = ev.target && ev.target.closest ? ev.target.closest('.ljx-del-btn') : null;
+      if (!btn) return;
+      const id = Number(btn.getAttribute('data-sample-id'));
+      if (Number.isFinite(id) && id > 0) {
+        setDelTarget({ id, regionName: p.regionName || '' });
+      }
+    };
+    popup.getElement().addEventListener('click', onPopupClick);
 
     const clusterId = p.id;
     if (!clusterId) return;
@@ -369,11 +510,180 @@ export default function App() {
       const data = await fetchClusterDetail(clusterId);
       const samples = data && Array.isArray(data.samples) ? data.samples : [];
       if (!popup.isOpen()) return;
-      popup.setHTML(buildPopupHTML(p, samples, false));
+      popup.setHTML(buildPopupHTML(p, samples, false, undefined, myIdsRef.current));
     } catch (err) {
       if (!popup.isOpen()) return;
-      popup.setHTML(buildPopupHTML(p, null, false, '样本加载失败，请稍后重试'));
+      popup.setHTML(buildPopupHTML(p, null, false, '样本加载失败，请稍后重试', myIdsRef.current));
     }
+  }, []);
+
+  /* ---------- 账号 / 我的记录 / 删除 ---------- */
+
+  /** 登录成功后：存会话、拉取我的记录 id 集合、关闭弹窗 */
+  const afterAuth = useCallback(
+    async (token, username) => {
+      storeSession(token, username);
+      setUser({ token, username });
+      setShowLogin(false);
+      setLoginErr('');
+      setLoginForm({ username: '', password: '' });
+      try {
+        const data = await myRecordsApi(token);
+        const ids = new Set((data.records || []).map((r) => Number(r.id)));
+        myIdsRef.current = ids;
+        setMyIds(ids);
+      } catch (e) {
+        myIdsRef.current = new Set();
+        setMyIds(new Set());
+      }
+    },
+    []
+  );
+
+  /** 提交登录/注册 */
+  const onSubmitAuth = async () => {
+    const username = (loginForm.username || '').trim();
+    const password = loginForm.password || '';
+    if (!username || !password) {
+      setLoginErr('请输入用户名和密码');
+      return;
+    }
+    if (password.length < 6) {
+      setLoginErr('密码至少 6 个字符');
+      return;
+    }
+    setLoginBusy(true);
+    setLoginErr('');
+    try {
+      const data = loginMode === 'register' ? await registerApi(username, password) : await loginApi(username, password);
+      await afterAuth(data.token, data.username);
+    } catch (err) {
+      if (loginMode === 'register' && err.status === 409) {
+        setLoginErr('用户名已被占用，请更换或直接登录');
+      } else if (err.status === 401) {
+        setLoginErr('用户名或密码错误');
+      } else {
+        setLoginErr((err && err.error) || '请求失败，请稍后重试');
+      }
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  /** 登出 */
+  const onLogout = () => {
+    clearStoredSession();
+    setUser(null);
+    myIdsRef.current = null;
+    setMyIds(null);
+    // 若当前有弹窗，重建（去掉删除按钮）
+    if (activePopupRef.current) {
+      try {
+        activePopupRef.current.remove();
+      } catch (e) {
+        /* 忽略 */
+      }
+      activePopupRef.current = null;
+    }
+  };
+
+  /** 确认删除：先登录验证密码（刷新 token）→ 再 DELETE（本人校验在后端） */
+  const onConfirmDelete = async () => {
+    if (!user || !delTarget) return;
+    setDelErr('');
+    if (!delPwd) {
+      setDelErr('请输入密码确认');
+      return;
+    }
+    setDelBusy(true);
+    try {
+      const loginData = await loginApi(user.username, delPwd); // 验证账号密码，刷新 token
+      storeSession(loginData.token, user.username);
+      const nextUser = { token: loginData.token, username: user.username };
+      setUser(nextUser);
+      await deleteRecordApi(delTarget.id, nextUser.token);
+      setDelTarget(null);
+      setDelPwd('');
+      setToastMsg('已删除该记录');
+      setTimeout(() => setToastMsg(null), 3000);
+      // 刷新我的记录集合 + 关闭当前弹窗 + 重拉聚合
+      try {
+        const data = await myRecordsApi(nextUser.token);
+        const ids = new Set((data.records || []).map((r) => Number(r.id)));
+        myIdsRef.current = ids;
+        setMyIds(ids);
+      } catch (e) {
+        /* 忽略 */
+      }
+      if (activePopupRef.current) {
+        try {
+          activePopupRef.current.remove();
+        } catch (err) {
+          /* 忽略 */
+        }
+        activePopupRef.current = null;
+      }
+      const map = mapRef.current;
+      if (map && mapLoadedRef.current) {
+        const b = map.getBounds();
+        loadClusters(
+          expandBbox({
+            minLng: b.getWest(),
+            maxLng: b.getEast(),
+            minLat: b.getSouth(),
+            maxLat: b.getNorth(),
+          }),
+          { updateTotal: true }
+        );
+      }
+    } catch (err) {
+      if (err.status === 401) setDelErr('密码错误');
+      else if (err.status === 403) setDelErr('只能删除自己的记录');
+      else setDelErr((err && err.error) || '删除失败，请稍后重试');
+    } finally {
+      setDelBusy(false);
+    }
+  };
+
+  /** 应用检索/筛选（重拉当前视野，更新 total） */
+  const applyFilters = useCallback(() => {
+    const map = mapRef.current;
+    const bbox = map && mapLoadedRef.current
+      ? expandBbox({
+          minLng: map.getBounds().getWest(),
+          maxLng: map.getBounds().getEast(),
+          minLat: map.getBounds().getSouth(),
+          maxLat: map.getBounds().getNorth(),
+        })
+      : worldBbox();
+    loadClusters(bbox, { updateTotal: true });
+  }, [loadClusters]);
+
+  /** 清除检索/筛选 */
+  const clearFilters = () => {
+    setFilters({ region: '', minScore: '', maxScore: '', range: 'all' });
+    // 等 state 生效后重拉（filtersRef 在下次渲染同步；这里先清 ref 立即生效）
+    filtersRef.current = { region: '', minScore: '', maxScore: '', range: 'all' };
+    applyFilters();
+  };
+
+  /* 恢复会话：页面加载时若有 pm_token → me 验证 + 拉我的记录集合（失败静默清除） */
+  useEffect(() => {
+    const session = readStoredSession();
+    if (!session) return;
+    setUser({ token: session.token, username: session.username });
+    (async () => {
+      try {
+        await meApi(session.token);
+        const data = await myRecordsApi(session.token);
+        const ids = new Set((data.records || []).map((r) => Number(r.id)));
+        myIdsRef.current = ids;
+        setMyIds(ids);
+      } catch (e) {
+        clearStoredSession();
+        setUser(null);
+      }
+    })();
   }, []);
 
   /* ---------- 地图生命周期 ---------- */
@@ -563,12 +873,78 @@ export default function App() {
   return (
     <div className="ljx-page">
       <header className="ljx-header">
-        <div className="ljx-header-title">林间回响 · 城市鸟类宜居度公共地图</div>
-        <div className="ljx-header-sub">
-          <span className="ljx-header-total">样本总数：{total == null ? '—' : total}</span>
-          <span className="ljx-header-note">坐标为近似位置，已模糊处理</span>
+        <div className="ljx-header-left">
+          <div className="ljx-header-title">林间回响 · 城市鸟类宜居度公共地图</div>
+          <div className="ljx-header-sub">
+            <span className="ljx-header-total">样本总数：{total == null ? '—' : total}</span>
+            <span className="ljx-header-note">坐标为近似位置，已模糊处理</span>
+          </div>
+        </div>
+        <div className="ljx-header-user">
+          {user ? (
+            <>
+              <span className="ljx-header-username">{user.username}</span>
+              <button type="button" className="ljx-btn ljx-btn-ghost" onClick={onLogout}>
+                登出
+              </button>
+            </>
+          ) : (
+            <button type="button" className="ljx-btn" onClick={() => setShowLogin(true)}>
+              登录
+            </button>
+          )}
         </div>
       </header>
+
+      {/* 检索 / 筛选条 */}
+      <div className="ljx-filterbar">
+        <input
+          type="text"
+          className="ljx-input ljx-input-search"
+          placeholder="搜索地区，如 西湖公园"
+          value={filters.region}
+          onChange={(e) => setFilters((f) => ({ ...f, region: e.target.value }))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') applyFilters();
+          }}
+        />
+        <div className="ljx-filter-group">
+          <input
+            type="number"
+            className="ljx-input ljx-input-score"
+            placeholder="最低分"
+            min="0"
+            max="100"
+            value={filters.minScore}
+            onChange={(e) => setFilters((f) => ({ ...f, minScore: e.target.value }))}
+          />
+          <span className="ljx-filter-sep">~</span>
+          <input
+            type="number"
+            className="ljx-input ljx-input-score"
+            placeholder="最高分"
+            min="0"
+            max="100"
+            value={filters.maxScore}
+            onChange={(e) => setFilters((f) => ({ ...f, maxScore: e.target.value }))}
+          />
+        </div>
+        <select
+          className="ljx-select"
+          value={filters.range}
+          onChange={(e) => setFilters((f) => ({ ...f, range: e.target.value }))}
+        >
+          <option value="all">全部时间</option>
+          <option value="7d">近 7 天</option>
+          <option value="30d">近 30 天</option>
+        </select>
+        <button type="button" className="ljx-btn" onClick={applyFilters}>
+          查询
+        </button>
+        <button type="button" className="ljx-btn ljx-btn-ghost" onClick={clearFilters}>
+          清除
+        </button>
+      </div>
 
       <main className="ljx-map-wrap">
         <div ref={containerRef} className="ljx-map-canvas" />
@@ -603,7 +979,11 @@ export default function App() {
         {showEmpty && (
           <div className="ljx-overlay">
             <div className="ljx-overlay-card">
-              <p>还没有公开数据，快去 App 上传第一条吧</p>
+              <p>
+                {filters.region || filters.minScore !== '' || filters.maxScore !== '' || filters.range !== 'all'
+                  ? '没有匹配的数据，试试清除筛选'
+                  : '还没有公开数据，快去 App 上传第一条吧'}
+              </p>
             </div>
           </div>
         )}
@@ -621,6 +1001,7 @@ export default function App() {
 
         {banner && !error && <div className="ljx-banner">{banner}</div>}
         {tileError && <div className="ljx-banner ljx-banner-warn">{tileError}</div>}
+        {toastMsg && <div className="ljx-banner ljx-banner-ok">{toastMsg}</div>}
 
         {/* 图例：底部左侧 红→黄→绿 */}
         <div className="ljx-legend">
@@ -632,6 +1013,108 @@ export default function App() {
 
         <div className="ljx-attribution">© 高德地图</div>
       </main>
+
+      {/* 登录 / 注册弹窗 */}
+      {showLogin && (
+        <div className="ljx-modal">
+          <div className="ljx-modal-card">
+            <div className="ljx-modal-title">账号登录</div>
+            <div className="ljx-modal-tabs">
+              <button
+                type="button"
+                className={loginMode === 'login' ? 'on' : ''}
+                onClick={() => {
+                  setLoginMode('login');
+                  setLoginErr('');
+                }}
+              >
+                登录
+              </button>
+              <button
+                type="button"
+                className={loginMode === 'register' ? 'on' : ''}
+                onClick={() => {
+                  setLoginMode('register');
+                  setLoginErr('');
+                }}
+              >
+                注册
+              </button>
+            </div>
+            <div className="ljx-modal-body">
+              <input
+                type="text"
+                className="ljx-input"
+                placeholder="用户名"
+                value={loginForm.username}
+                onChange={(e) => setLoginForm((f) => ({ ...f, username: e.target.value }))}
+              />
+              <input
+                type="password"
+                className="ljx-input"
+                placeholder="密码（至少 6 位）"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm((f) => ({ ...f, password: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSubmitAuth();
+                }}
+              />
+              {loginErr && <div className="ljx-modal-err">{loginErr}</div>}
+              <p className="ljx-modal-hint">与 App 使用同一账号体系，注册后 App / 网站均可登录</p>
+            </div>
+            <div className="ljx-modal-foot">
+              <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowLogin(false)}>
+                取消
+              </button>
+              <button type="button" className="ljx-btn" disabled={loginBusy} onClick={onSubmitAuth}>
+                {loginBusy ? '提交中…' : loginMode === 'register' ? '注册并登录' : '登录'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除确认弹窗（需账号密码） */}
+      {delTarget && (
+        <div className="ljx-modal">
+          <div className="ljx-modal-card">
+            <div className="ljx-modal-title">删除公开记录</div>
+            <div className="ljx-modal-body">
+              <p className="ljx-modal-hint">
+                将以账号 <b>{user ? user.username : ''}</b> 删除
+                {delTarget.regionName ? `「${delTarget.regionName}」` : ''}的这条记录（无法恢复）。
+              </p>
+              <input
+                type="password"
+                className="ljx-input"
+                placeholder="输入账号密码确认"
+                value={delPwd}
+                onChange={(e) => setDelPwd(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onConfirmDelete();
+                }}
+              />
+              {delErr && <div className="ljx-modal-err">{delErr}</div>}
+            </div>
+            <div className="ljx-modal-foot">
+              <button
+                type="button"
+                className="ljx-btn ljx-btn-ghost"
+                onClick={() => {
+                  setDelTarget(null);
+                  setDelPwd('');
+                  setDelErr('');
+                }}
+              >
+                取消
+              </button>
+              <button type="button" className="ljx-btn ljx-btn-danger" disabled={delBusy} onClick={onConfirmDelete}>
+                {delBusy ? '删除中…' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

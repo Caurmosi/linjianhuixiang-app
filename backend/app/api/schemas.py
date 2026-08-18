@@ -221,7 +221,11 @@ class ClusterListResponse(BaseModel):
 
 
 class ClusterSample(BaseModel):
-    """聚合点样本：昵称/匿名 + 日期（到天）+ 评分（不返回任何坐标）。"""
+    """聚合点样本：昵称/匿名 + 日期（到天）+ 评分（不返回任何坐标）。
+
+    id 供「我的记录」识别（删除需登录且本人校验，返回 id 无越权风险）。
+    """
+    id: int
     nickname: str
     isAnonymous: bool
     date: str

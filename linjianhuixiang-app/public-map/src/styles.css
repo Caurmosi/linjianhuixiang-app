@@ -27,6 +27,7 @@ body {
 /* ---------- 页面骨架 ---------- */
 
 .ljx-page {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -331,4 +332,198 @@ body {
   .ljx-legend-bar {
     width: 64px;
   }
+}
+
+/* ===================== 头部 / 筛选 / 弹窗 / 删除 ===================== */
+
+.ljx-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ljx-header-left {
+  min-width: 0;
+}
+.ljx-header-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.ljx-header-username {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--green-deep, #1b7a4b);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ljx-btn-ghost {
+  background: transparent;
+  border: 1px solid #c8d6cf;
+  color: #4a6b5a;
+}
+.ljx-btn-danger {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
+.ljx-btn-danger:disabled {
+  opacity: 0.55;
+}
+
+.ljx-filterbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: #fff;
+  border-bottom: 1px solid #e6ece8;
+}
+.ljx-input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cfd9d2;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #22332a;
+  background: #fff;
+  outline: none;
+  box-sizing: border-box;
+}
+.ljx-input:focus {
+  border-color: #1b7a4b;
+}
+.ljx-input-search {
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+.ljx-input-score {
+  width: 74px;
+}
+.ljx-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ljx-filter-sep {
+  color: #8aa096;
+  font-size: 12px;
+}
+.ljx-select {
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid #cfd9d2;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #22332a;
+  background: #fff;
+  outline: none;
+}
+
+/* 弹窗（登录 / 删除确认） */
+.ljx-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 34, 27, 0.42);
+  padding: 20px;
+}
+.ljx-modal-card {
+  width: 100%;
+  max-width: 340px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 12px 34px rgba(18, 45, 30, 0.22);
+  box-sizing: border-box;
+}
+.ljx-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #22332a;
+  margin-bottom: 12px;
+}
+.ljx-modal-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.ljx-modal-tabs button {
+  flex: 1;
+  height: 32px;
+  border: 1px solid #cfd9d2;
+  border-radius: 8px;
+  background: #fff;
+  color: #5b7266;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ljx-modal-tabs button.on {
+  background: #1b7a4b;
+  border-color: #1b7a4b;
+  color: #fff;
+}
+.ljx-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ljx-modal-body .ljx-input {
+  width: 100%;
+}
+.ljx-modal-err {
+  font-size: 12px;
+  color: #c0392b;
+}
+.ljx-modal-hint {
+  font-size: 12px;
+  color: #7a9186;
+  line-height: 1.5;
+  margin: 0;
+}
+.ljx-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* 样本删除按钮 */
+.ljx-del-btn {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #9db0a6;
+  cursor: pointer;
+  padding: 0;
+}
+.ljx-del-btn:hover {
+  background: #fdecea;
+  color: #c0392b;
+}
+.ljx-popup-sample {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 成功 toast */
+.ljx-banner-ok {
+  background: #e6f6ec;
+  color: #176a42;
+  border-color: #b7e3c8;
 }

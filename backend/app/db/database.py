@@ -351,9 +351,12 @@ class Database:
         return row
 
     def list_public_records(self, viewport: dict | None = None) -> list[dict]:
-        """返回全部公共记录（可选视口过滤）。
+        """返回全部公共记录（可选过滤）。
 
-        viewport 键：min_lng / max_lng / min_lat / max_lat（均可选，独立生效）。
+        viewport 键（均可选，独立生效）：
+          min_lng / max_lng / min_lat / max_lat  坐标视口
+          region                                地区名模糊（LIKE %v%）
+          from / to                              创建时间范围（ISO 字符串，含边界）
         """
         sql = (
             "SELECT id, user_id, username, is_anonymous, region_name, lat, lng, cluster_key, "
@@ -374,6 +377,15 @@ class Database:
         if vp.get("max_lat") is not None:
             conditions.append("lat <= ?")
             params.append(float(vp["max_lat"]))
+        if vp.get("region"):
+            conditions.append("region_name LIKE ?")
+            params.append(f"%{str(vp['region']).strip()}%")
+        if vp.get("from") is not None:
+            conditions.append("created_at >= ?")
+            params.append(str(vp["from"]))
+        if vp.get("to") is not None:
+            conditions.append("created_at <= ?")
+            params.append(str(vp["to"]))
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
         sql += " ORDER BY id"

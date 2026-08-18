@@ -620,12 +620,33 @@ def get_public_clusters(
     maxLng: float | None = Query(default=None),
     minLat: float | None = Query(default=None),
     maxLat: float | None = Query(default=None),
+    region: str | None = Query(default=None),
+    minScore: int | None = Query(default=None, ge=0, le=100),
+    maxScore: int | None = Query(default=None, ge=0, le=100),
+    from_: str | None = Query(default=None, alias="from"),
+    to: str | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=500),
 ) -> dict:
-    """公共聚合查询（匿名只读，供公共网页）：按 cluster_key 聚合 + 质心模糊；可选视口过滤。"""
-    viewport = {"min_lng": minLng, "max_lng": maxLng, "min_lat": minLat, "max_lat": maxLat}
+    """公共聚合查询（匿名只读）：按 cluster_key 聚合 + 质心模糊。
+
+    过滤：region 地区名模糊 / from-to 时间窗（聚合前 SQL 过滤）；
+         minScore-maxScore 评分区间（聚合后按簇加权均值过滤）。
+    """
+    viewport = {
+        "min_lng": minLng,
+        "max_lng": maxLng,
+        "min_lat": minLat,
+        "max_lat": maxLat,
+        "region": region,
+        "from": from_,
+        "to": to,
+    }
     rows = database.get_db().list_public_records(viewport)
     clusters = privacy_mod.aggregate_clusters(rows)
+    if minScore is not None:
+        clusters = [c for c in clusters if c["score"] >= minScore]
+    if maxScore is not None:
+        clusters = [c for c in clusters if c["score"] <= maxScore]
     total = len(clusters)
     return {"clusters": clusters[:limit], "total": total}
 
@@ -646,6 +667,7 @@ def get_public_cluster_detail(
     cluster = privacy_mod.aggregate_clusters(matched)[0]
     samples = [
         {
+            "id": r["id"],
             "nickname": "匿名用户" if r["is_anonymous"] or not r["username"] else r["username"],
             "isAnonymous": bool(r["is_anonymous"]),
             "date": str(r["created_at"])[:10],
