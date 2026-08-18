@@ -14,19 +14,27 @@ POST /api/analyze         → 上传音频（multipart），返回完整分析�
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import re
+import secrets
+import sqlite3
 import time
 from datetime import datetime, timezone
 
 import requests
 import numpy as np
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 
 from .. import config
 from ..core import audio, birdnet, dsp, indices as indices_mod, livability as livability_mod
 from ..core import noise as noise_mod
 from ..core import baseline, synthesis
+from ..core import privacy as privacy_mod
 from ..db import database
-from . import schemas
+from . import deps, schemas
+from .errors import ApiError
 
 router = APIRouter()
 _started_at = time.time()
@@ -377,3 +385,287 @@ async def analyze(
         }
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# 登录系统（用户名 + 密码，无手机号/邮箱；服务端 token 表，长期有效）
+# ---------------------------------------------------------------------------
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fa5]+$")
+_PBKDF2_ITERATIONS = 100_000
+
+
+def _hash_password(password: str) -> str:
+    """PBKDF2-SHA256 密码哈希，存储格式 `pbkdf2$<salt>$<hex>`。"""
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("ascii"), _PBKDF2_ITERATIONS)
+    return f"pbkdf2${salt}${digest.hex()}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    """校验存储的 pbkdf2 哈希（常量时间比较，防时序攻击）。"""
+    try:
+        scheme, salt, expected = stored.split("$", 2)
+    except ValueError:
+        return False
+    if scheme != "pbkdf2":
+        return False
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("ascii"), _PBKDF2_ITERATIONS)
+    return hmac.compare_digest(digest.hex(), expected)
+
+
+def _issue_token(user: dict) -> str:
+    """生成 token（secrets.token_hex(32)）并写入 auth_tokens 表，返回 token 字符串。"""
+    token = secrets.token_hex(32)
+    database.get_db().create_token(token, user["id"])
+    return token
+
+
+def _validate_username(username: str) -> str | None:
+    """校验用户名：1-20 字符，字母/数字/下划线/中文；非法返回错误信息，合法返回 None。"""
+    if not (1 <= len(username) <= 20):
+        return "用户名长度须为 1-20 个字符"
+    if not _USERNAME_RE.match(username):
+        return "用户名只能包含字母、数字、下划线和中文"
+    return None
+
+
+def _validate_password(password: str) -> str | None:
+    """校验密码：至少 6 字符；非法返回错误信息，合法返回 None。"""
+    if len(password) < 6:
+        return "密码长度至少 6 个字符"
+    return None
+
+
+@router.post("/api/auth/register", response_model=schemas.AuthResponse, status_code=201, tags=["auth"])
+def register(payload: schemas.RegisterRequest) -> dict:
+    """注册即登录：创建用户 + 签发 token。重名 → 409；非法用户名/密码 → 400。"""
+    username = payload.username.strip()
+    err = _validate_username(username)
+    if err:
+        raise ApiError(400, err, err)
+    err = _validate_password(payload.password)
+    if err:
+        raise ApiError(400, err, err)
+
+    db = database.get_db()
+    if db.get_user_by_username(username) is not None:
+        raise ApiError(409, "用户名已被占用", f"用户名 {username} 已存在，请更换或直接登录")
+    try:
+        user = db.create_user(username, _hash_password(payload.password))
+    except sqlite3.IntegrityError:
+        # 并发注册兜底：唯一约束冲突同样视为重名
+        raise ApiError(409, "用户名已被占用", f"用户名 {username} 已存在，请更换或直接登录")
+    token = _issue_token(user)
+    return {"token": token, "username": user["username"], "createdAt": user["created_at"]}
+
+
+@router.post(
+    "/api/auth/login",
+    response_model=schemas.AuthResponse,
+    response_model_exclude_none=True,
+    status_code=200,
+    tags=["auth"],
+)
+def login(payload: schemas.LoginRequest) -> dict:
+    """登录：校验用户名 + 密码 → 签发 token。凭据错 → 401。"""
+    username = payload.username.strip()
+    user = database.get_db().get_user_by_username(username)
+    if user is None or not _verify_password(payload.password, user["password_hash"]):
+        raise ApiError(401, "用户名或密码错误", "用户名或密码不正确")
+    token = _issue_token(user)
+    return {"token": token, "username": user["username"]}
+
+
+@router.post("/api/auth/logout", status_code=200, tags=["auth"])
+def logout(authorization: str | None = Header(default=None)) -> dict:
+    """登出：删除当前 token（幂等，token 不存在也返回 ok）。"""
+    token = deps.parse_bearer(authorization)
+    if token is None:
+        raise ApiError(401, "未登录", "缺少或非法的 Authorization 头")
+    database.get_db().delete_token(token)
+    return {"ok": True}
+
+
+@router.get("/api/auth/me", response_model=schemas.MeResponse, tags=["auth"])
+def me(authorization: str | None = Header(default=None)) -> dict:
+    """当前登录用户信息；token 缺失/无效 → 401。"""
+    user = deps.get_current_user(authorization)
+    return {"username": user["username"], "createdAt": user["created_at"]}
+
+
+# ---------------------------------------------------------------------------
+# 公共上传池（登录后可用）
+# ---------------------------------------------------------------------------
+def _geocode_first(region_name: str) -> tuple[float, float] | None:
+    """用高德 geocode/place 反查地区名坐标（GCJ-02），返回 (lng, lat)；失败返回 None。
+
+    复用 _amap_request（key 在后端 config，不暴露给前端）。
+    """
+    key = config.AMAP_WEB_KEY
+    if not key:
+        return None
+    data = _amap_request(config.AMAP_GEOCODE_URL, {"address": region_name, "key": key})
+    if isinstance(data, dict):
+        for g in data.get("geocodes") or []:
+            if not isinstance(g, dict):
+                continue
+            loc = _parse_location(g.get("location"))
+            if loc is not None:
+                return loc
+    data = _amap_request(config.AMAP_PLACE_URL, {"keywords": region_name, "key": key})
+    if isinstance(data, dict):
+        for p in data.get("pois") or []:
+            if not isinstance(p, dict):
+                continue
+            loc = _parse_location(p.get("location"))
+            if loc is not None:
+                return loc
+    return None
+
+
+@router.post(
+    "/api/public/records",
+    response_model=schemas.PublicRecordResponse,
+    status_code=201,
+    tags=["public"],
+)
+def create_public_record(
+    payload: schemas.PublicRecordCreate,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """公开上传：登录后写入一条公共记录（region 当前快照）。
+
+    坐标解析顺序：overrideCoords(manual) > lat/lng(gps) > geocode 反查(geocode)；
+    全失败 → 400「无法定位该地区，请在地图上选点」。
+    is_anonymous=true 时 username 置 NULL。
+    """
+    user = deps.get_current_user(authorization)
+    region_name = payload.regionName.strip()
+    if not region_name:
+        raise ApiError(400, "地区名称不能为空", "regionName 不能为空")
+
+    lat: float | None = None
+    lng: float | None = None
+    coords_source = "manual"
+    if payload.overrideCoords is not None:
+        lat, lng = payload.overrideCoords.lat, payload.overrideCoords.lng
+        coords_source = "manual"
+    elif payload.lat is not None and payload.lng is not None:
+        lat, lng = payload.lat, payload.lng
+        coords_source = "gps"
+    else:
+        loc = _geocode_first(region_name)
+        if loc is None:
+            raise ApiError(400, "无法定位该地区，请在地图上选点", "无法定位该地区，请在地图上选点")
+        lng, lat = loc
+        coords_source = "geocode"
+
+    score = max(0, min(100, int(payload.score)))
+    is_anonymous = bool(payload.isAnonymous)
+    username = None if is_anonymous else user["username"]
+    key = privacy_mod.cluster_key(region_name, lat, lng)
+    summary_json = json.dumps(payload.summary or {}, ensure_ascii=False)
+    row = database.get_db().insert_public_record(
+        {
+            "user_id": user["id"],
+            "username": username,
+            "is_anonymous": is_anonymous,
+            "region_name": region_name,
+            "lat": lat,
+            "lng": lng,
+            "cluster_key": key,
+            "score": score,
+            "confidence": payload.confidence,
+            "coords_source": coords_source,
+            "summary_json": summary_json,
+            "created_at": _now_iso(),
+        }
+    )
+    return {
+        "id": row["id"],
+        "regionName": row["region_name"],
+        "score": row["score"],
+        "confidence": row["confidence"],
+        "coordsSource": row["coords_source"],
+        "clusterKey": row["cluster_key"],
+        "createdAt": row["created_at"],
+    }
+
+
+@router.get("/api/public/clusters", response_model=schemas.ClusterListResponse, tags=["public"])
+def get_public_clusters(
+    minLng: float | None = Query(default=None),
+    maxLng: float | None = Query(default=None),
+    minLat: float | None = Query(default=None),
+    maxLat: float | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> dict:
+    """公共聚合查询（匿名只读，供公共网页）：按 cluster_key 聚合 + 质心模糊；可选视口过滤。"""
+    viewport = {"min_lng": minLng, "max_lng": maxLng, "min_lat": minLat, "max_lat": maxLat}
+    rows = database.get_db().list_public_records(viewport)
+    clusters = privacy_mod.aggregate_clusters(rows)
+    total = len(clusters)
+    return {"clusters": clusters[:limit], "total": total}
+
+
+@router.get(
+    "/api/public/clusters/{cluster_key}",
+    response_model=schemas.ClusterDetailResponse,
+    tags=["public"],
+)
+def get_public_cluster_detail(
+    cluster_key: str,
+) -> dict:
+    """聚合点详情（匿名只读）：簇聚合 + 样本（匿名/昵称 + 日期 + 评分，不返回坐标）。"""
+    rows = database.get_db().list_public_records()
+    matched = [r for r in rows if r["cluster_key"] == cluster_key]
+    if not matched:
+        raise ApiError(404, "聚合点不存在", f"cluster_key={cluster_key} 不存在")
+    cluster = privacy_mod.aggregate_clusters(matched)[0]
+    samples = [
+        {
+            "nickname": "匿名用户" if r["is_anonymous"] or not r["username"] else r["username"],
+            "isAnonymous": bool(r["is_anonymous"]),
+            "date": str(r["created_at"])[:10],
+            "score": r["score"],
+            "confidence": r["confidence"],
+        }
+        for r in matched
+    ]
+    return {"cluster": cluster, "samples": samples}
+
+
+@router.get("/api/public/me", response_model=schemas.MyPublicRecordsResponse, tags=["public"])
+def get_my_public_records(authorization: str | None = Header(default=None)) -> dict:
+    """我的公开记录：当前用户上传的全部记录（可撤回管理）。"""
+    user = deps.get_current_user(authorization)
+    rows = database.get_db().list_public_records_by_user(user["id"])
+    records = [
+        {
+            "id": r["id"],
+            "regionName": r["region_name"],
+            "score": r["score"],
+            "createdAt": r["created_at"],
+            "isAnonymous": bool(r["is_anonymous"]),
+            "username": r["username"],
+        }
+        for r in rows
+    ]
+    return {"records": records}
+
+
+@router.delete("/api/public/records/{record_id}", status_code=200, tags=["public"])
+def delete_public_record(
+    record_id: int,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """撤回公开记录：仅本人（user_id 匹配）可删；他人 403，不存在 404。"""
+    user = deps.get_current_user(authorization)
+    db = database.get_db()
+    record = db.get_public_record(record_id)
+    if record is None:
+        raise ApiError(404, "记录不存在", f"公共记录 id={record_id} 不存在")
+    if record["user_id"] != user["id"]:
+        raise ApiError(403, "无权删除他人记录", "只能撤回自己的公开记录")
+    db.delete_public_record(record_id)
+    return {"ok": True, "id": record_id}

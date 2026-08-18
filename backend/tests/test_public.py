@@ -1,0 +1,249 @@
+"""
+test_public.py —— 公共上传池接口：上传/聚合/视口/详情/我的/撤回/鉴权
+geocode 一律 mock（monkeypatch），不真实调用高德。
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from urllib.parse import quote
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.core import privacy  # noqa: E402
+
+
+@pytest.fixture()
+def client():
+    """函数级夹具：每个用例独立 DB，避免上传数据跨用例污染聚合断言。"""
+    from fastapi.testclient import TestClient
+
+    from app.db import database
+    from app.main import app
+
+    tmp_db = Path(__file__).resolve().parent / "_test_public.db"
+    if tmp_db.exists():
+        tmp_db.unlink()
+    database.reset_db_for_tests(tmp_db)
+    with TestClient(app) as c:
+        yield c
+    database.close_db()
+    tmp_db.unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def _geocode_mock(monkeypatch):
+    """默认 mock 高德：geocode 返回西湖公园坐标，place 返回空。"""
+    from app.api import routes
+
+    def fake_amap_request(url, params):
+        if "geocode" in url:
+            return {"geocodes": [{"location": "120.132000,30.259000", "formatted_address": "西湖公园"}]}
+        return {"pois": []}
+
+    monkeypatch.setattr(routes, "_amap_request", fake_amap_request)
+
+
+def _register(client, username="上传用户", password="secret123") -> str:
+    r = client.post("/api/auth/register", json={"username": username, "password": password})
+    assert r.status_code == 201, r.text
+    return r.json()["token"]
+
+
+def _auth(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _upload(client, token: str, **body) -> dict:
+    payload = {"regionName": "西湖公园", "score": 70}
+    payload.update(body)
+    r = client.post("/api/public/records", json=payload, headers=_auth(token))
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+# ---------------------------------------------------------------------------
+# 上传
+# ---------------------------------------------------------------------------
+def test_upload_with_coords(client):
+    """带 lat/lng → coords_source=gps，返回 201 契约字段。"""
+    token = _register(client)
+    data = _upload(client, token, lat=30.259, lng=120.132, score=78, confidence=0.9,
+                   summary={"livability": {"score": 78}})
+    assert data["id"] > 0
+    assert data["regionName"] == "西湖公园"
+    assert data["score"] == 78
+    assert data["confidence"] == 0.9
+    assert data["coordsSource"] == "gps"
+    assert "|" in data["clusterKey"] and ":" in data["clusterKey"]
+    assert data["createdAt"]
+
+
+def test_upload_geocode_fallback(client):
+    """无坐标 → geocode 反查兜底，coords_source=geocode。"""
+    token = _register(client, "无坐标用户")
+    data = _upload(client, token, score=70)
+    assert data["coordsSource"] == "geocode"
+    assert data["clusterKey"].startswith("西湖公园|")
+
+
+def test_upload_geocode_fail_400(client, monkeypatch):
+    """坐标全失败（高德不可达）→ 400「无法定位该地区，请在地图上选点」。"""
+    from app.api import routes
+
+    monkeypatch.setattr(routes, "_amap_request", lambda url, params: None)
+    token = _register(client, "定位失败用户")
+    r = client.post(
+        "/api/public/records",
+        json={"regionName": "不存在的地方", "score": 50},
+        headers=_auth(token),
+    )
+    assert r.status_code == 400
+    body = r.json()
+    assert body["error"] == "无法定位该地区，请在地图上选点"
+
+
+def test_upload_anonymous_null_username(client):
+    """isAnonymous=true → 我的记录 username 为 null。"""
+    token = _register(client, "匿名用户甲")
+    data = _upload(client, token, lat=30.259, lng=120.132, score=66, isAnonymous=True)
+    rec_id = data["id"]
+    me = client.get("/api/public/me", headers=_auth(token)).json()["records"]
+    mine = [m for m in me if m["id"] == rec_id][0]
+    assert mine["isAnonymous"] is True
+    assert mine["username"] is None
+
+
+def test_upload_override_coords_manual(client):
+    """overrideCoords 优先于 lat/lng → coords_source=manual，簇键按覆盖坐标计算。"""
+    token = _register(client, "覆盖坐标用户")
+    data = _upload(client, token, lat=30.259, lng=120.132, score=50,
+                   overrideCoords={"lat": 30.1, "lng": 120.1})
+    assert data["coordsSource"] == "manual"
+    assert data["clusterKey"] == privacy.cluster_key("西湖公园", 30.1, 120.1)
+
+
+def test_upload_score_clamped(client):
+    """score clamp 0-100。"""
+    token = _register(client, "钳制用户")
+    assert _upload(client, token, lat=30.259, lng=120.132, score=150)["score"] == 100
+    assert _upload(client, token, lat=30.259, lng=120.132, score=-5)["score"] == 0
+
+
+def test_public_requires_auth(client):
+    """公共只读（clusters 列表/详情）匿名可访问；写操作（上传/我的/撤回）需登录。"""
+    assert client.get("/api/public/clusters").status_code == 200, "公共聚合应匿名可读（公共网页无登录）"
+    assert client.get("/api/public/clusters/不存在%7C1%3A1").status_code == 404, "匿名访问详情：不存在 → 404（而非 401）"
+    assert client.get("/api/public/me").status_code == 401
+    assert client.post("/api/public/records", json={"regionName": "x", "score": 1}).status_code == 401
+    assert client.delete("/api/public/records/1").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# 聚合 / 视口 / 详情
+# ---------------------------------------------------------------------------
+def test_clusters_aggregation_and_fuzz(client):
+    """同格网合并、加权均值、fuzz 确定性。"""
+    token = _register(client, "聚合用户")
+    h = _auth(token)
+    # 同格网两条（cell 6050:24020）+ 不同格网一条
+    _upload(client, token, lat=30.251, lng=120.101, score=80, confidence=0.9)
+    _upload(client, token, lat=30.252, lng=120.102, score=60, confidence=0.1)
+    _upload(client, token, lat=30.40, lng=120.40, score=70, confidence=0.5)
+
+    r = client.get("/api/public/clusters", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    clusters = body["clusters"]
+    assert body["total"] == 2  # 两条同格网合并成 1 簇 + 独立 1 簇
+    two = [c for c in clusters if c["n"] == 2][0]
+    assert two["scoreMin"] == 60 and two["scoreMax"] == 80
+    # 加权均值：(80*0.9 + 60*0.1) / (0.9+0.1) = 78.0
+    assert two["score"] == 78.0
+    assert two["confidenceAvg"] == 0.5
+    assert two["createdFrom"] and two["createdTo"]
+    # fuzz 确定性：两次请求同簇坐标一致
+    r2 = client.get("/api/public/clusters", headers=h).json()
+    c2 = [c for c in r2["clusters"] if c["id"] == two["id"]][0]
+    assert c2["lat"] == two["lat"] and c2["lng"] == two["lng"]
+
+
+def test_clusters_viewport_filter(client):
+    """视口过滤：仅返回视口内记录对应的簇。"""
+    token = _register(client, "视口用户")
+    h = _auth(token)
+    _upload(client, token, lat=30.259, lng=120.132, score=70)
+    _upload(client, token, regionName="滨江公园", lat=31.5, lng=121.5, score=60)
+
+    r = client.get(
+        "/api/public/clusters",
+        params={"minLng": 120.0, "maxLng": 120.5, "minLat": 30.0, "maxLat": 30.5},
+        headers=h,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["clusters"][0]["regionName"] == "西湖公园"
+
+
+def test_cluster_detail(client):
+    """详情：簇聚合 + 样本（匿名 → 匿名用户，date 到天，不含坐标）；未知 key → 404。"""
+    token = _register(client, "详情用户")
+    h = _auth(token)
+    _upload(client, token, lat=30.259, lng=120.132, score=81, confidence=0.8, isAnonymous=True)
+
+    clusters = client.get("/api/public/clusters", headers=h).json()["clusters"]
+    assert len(clusters) == 1
+    key = clusters[0]["id"]
+    r = client.get(f"/api/public/clusters/{quote(key, safe='')}", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["cluster"]["id"] == key
+    assert len(body["samples"]) == 1
+    s = body["samples"][0]
+    assert s["nickname"] == "匿名用户"
+    assert s["isAnonymous"] is True
+    assert len(s["date"]) == 10  # YYYY-MM-DD
+    assert s["score"] == 81
+    assert s["confidence"] == 0.8
+    # 未知 key → 404
+    r = client.get(f"/api/public/clusters/{quote('不存在|1:1', safe='')}", headers=h)
+    assert r.status_code == 404
+    assert "error" in r.json()
+
+
+# ---------------------------------------------------------------------------
+# 我的记录 / 撤回
+# ---------------------------------------------------------------------------
+def test_me_only_own_records(client):
+    """me 只返回本人记录。"""
+    token_a = _register(client, "甲用户")
+    token_b = _register(client, "乙用户")
+    _upload(client, token_a, lat=30.259, lng=120.132, score=75)
+    _upload(client, token_b, regionName="滨江公园", lat=31.5, lng=121.5, score=65)
+
+    me_a = client.get("/api/public/me", headers=_auth(token_a)).json()["records"]
+    assert len(me_a) == 1
+    assert me_a[0]["regionName"] == "西湖公园"
+    assert me_a[0]["username"] == "甲用户"
+    assert me_a[0]["score"] == 75
+
+
+def test_delete_public_record(client):
+    """撤回：他人 403 / 本人 200 / 不存在 404。"""
+    token = _register(client, "撤回用户")
+    rec_id = _upload(client, token, lat=30.259, lng=120.132, score=72)["id"]
+
+    token_b = _register(client, "他人用户")
+    r = client.delete(f"/api/public/records/{rec_id}", headers=_auth(token_b))
+    assert r.status_code == 403
+    assert "error" in r.json()
+
+    r = client.delete(f"/api/public/records/{rec_id}", headers=_auth(token))
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "id": rec_id}
+
+    r = client.delete(f"/api/public/records/{rec_id}", headers=_auth(token))
+    assert r.status_code == 404

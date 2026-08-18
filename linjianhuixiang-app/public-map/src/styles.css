@@ -1,0 +1,334 @@
+/* ============================================================
+ * styles.css —— 《林间回响》公共地图样式（纯 CSS，无 Tailwind）
+ * 简洁移动端/桌面自适应；字体使用系统默认字体栈。
+ * ============================================================ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: #f2f4f6;
+  color: #2b3440;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ---------- 页面骨架 ---------- */
+
+.ljx-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 顶部栏 ---------- */
+
+.ljx-header {
+  flex: none;
+  padding: 12px 16px 11px;
+  background: linear-gradient(135deg, #2e5d43, #1f3d2c);
+  color: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+  z-index: 5;
+}
+
+.ljx-header-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.ljx-header-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ljx-header-total {
+  font-weight: 600;
+}
+
+.ljx-header-note {
+  opacity: 0.9;
+}
+
+/* ---------- 地图容器 ---------- */
+
+.ljx-map-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.ljx-map-canvas {
+  position: absolute;
+  inset: 0;
+  background: #dfe7ec;
+}
+
+/* ---------- 覆盖层（加载/空态/错误） ---------- */
+
+.ljx-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 247, 248, 0.55);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.ljx-overlay-card {
+  pointer-events: auto;
+  max-width: 320px;
+  padding: 22px 26px;
+  background: #fff;
+  border-radius: 14px;
+  text-align: center;
+  box-shadow: 0 8px 28px rgba(31, 61, 44, 0.16);
+}
+
+.ljx-overlay-card p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #44505c;
+}
+
+.ljx-btn {
+  margin-top: 14px;
+  padding: 8px 22px;
+  background: #2e5d43;
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ljx-btn:active {
+  opacity: 0.85;
+}
+
+/* ---------- 轻提示横幅 ---------- */
+
+.ljx-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  padding: 6px 14px;
+  background: rgba(120, 53, 15, 0.92);
+  color: #fff;
+  font-size: 12px;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+}
+
+/* ---------- 图例（底部左侧） ---------- */
+
+.ljx-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 18px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: #3a4653;
+}
+
+.ljx-legend-title {
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.ljx-legend-label {
+  opacity: 0.85;
+}
+
+.ljx-legend-bar {
+  width: 88px;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #c25a39 0%, #d49a26 55%, #2e7d52 100%);
+}
+
+/* ---------- 地图版权（右下角） ---------- */
+
+.ljx-attribution {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 3;
+  padding: 2px 6px;
+  font-size: 10px;
+  color: rgba(60, 70, 80, 0.75);
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 6px;
+}
+
+/* ---------- Popup 弹窗 ---------- */
+
+.ljx-popup-wrap .maplibregl-popup-content {
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(20, 40, 30, 0.22);
+}
+
+.ljx-popup-wrap .maplibregl-popup-close-button {
+  font-size: 18px;
+  color: #6b7a86;
+}
+
+.ljx-popup {
+  min-width: 210px;
+  max-width: 320px;
+}
+
+.ljx-popup-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #22303b;
+  margin-bottom: 8px;
+}
+
+.ljx-popup-score-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ljx-popup-score {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  color: #2e7d52;
+}
+
+.ljx-popup-score-label {
+  font-size: 11px;
+  color: #6b7a86;
+}
+
+.ljx-popup-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: #55626e;
+  margin-bottom: 10px;
+}
+
+.ljx-popup-meta-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.ljx-popup-meta-item b {
+  color: #2b3440;
+  font-weight: 600;
+  text-align: right;
+}
+
+.ljx-popup-samples-title {
+  padding-top: 8px;
+  border-top: 1px solid #edf0f2;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2b3440;
+  margin-bottom: 6px;
+}
+
+.ljx-popup-sample {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid #f2f4f6;
+}
+
+.ljx-popup-sample-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #3a4653;
+}
+
+.ljx-popup-sample-date {
+  font-size: 11px;
+  color: #8b98a3;
+}
+
+.ljx-popup-sample-score {
+  font-weight: 700;
+  color: #2e7d52;
+}
+
+.ljx-popup-more {
+  padding-top: 6px;
+  font-size: 11px;
+  color: #8b98a3;
+}
+
+.ljx-popup-hint {
+  padding: 8px 0;
+  font-size: 12px;
+  color: #8b98a3;
+}
+
+.ljx-popup-error {
+  color: #b5472e;
+}
+
+.ljx-popup-note {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e3e8ec;
+  font-size: 11px;
+  color: #8b98a3;
+}
+
+/* ---------- 移动端微调 ---------- */
+
+@media (max-width: 480px) {
+  .ljx-header-title {
+    font-size: 15px;
+  }
+
+  .ljx-popup {
+    max-width: 260px;
+    min-width: 190px;
+  }
+
+  .ljx-legend-bar {
+    width: 64px;
+  }
+}

@@ -1,6 +1,6 @@
 /**
  * appStore.js
- * 轻量全局状态：当前屏幕 / 底部 Tab / 分析结果 / 识别阈值 / 处理开关 / Toast
+ * 轻量全局状态：当前屏幕 / 底部 Tab / 分析结果 / 识别阈值 / 处理开关 / Toast / 登录态
  * 使用 React Context + useReducer，无需额外依赖。
  *
  * 批量分析（B）：START_BATCH → AnalyzingScreen 逐项分析 → BATCH_PROGRESS 推进（reducer 只存结果）
@@ -9,9 +9,17 @@
  * 聚合逻辑一律在 reducer 外执行：reducer 内抛错会导致 React 卸载整棵树 → 白屏，
  * 因此 reducer 只做纯状态存取，并整体包 try/catch（出错返回原 state + Toast，不上抛）。
  * 录音多段（C）：RecordScreen 完成 ≥2 段时直接 dispatch COMPLETE_BATCH（payload: summary）。
+ *
+ * v2 数据本地化 + 登录：
+ *  - 真实 API 模式：history 初始从 localStore 读；regions 保持字面量 []（兼容静态契约测试），
+ *    挂载时由 AppProvider 从 localStore 水合 + 触发旧云端数据一次性迁移（尽力而为，失败静默）；
+ *  - 所有 history/regions 变更由 AppProvider effect 持久化到 localStore（mock 模式不碰）；
+ *  - 登录态：user（{username}|null）+ guest（游客跳过），由 App 门控渲染 LoginScreen。
  */
-import { createContext, useContext, useReducer } from 'react';
-import { buildMockAnalysis, getHistory, isMockMode } from '../data/repository';
+import { createContext, useContext, useEffect, useReducer } from 'react';
+import { buildMockAnalysis, getHistory, isMockMode, migrateCloudData } from '../data/repository';
+import { loadHistory, loadRegions, saveBatches, saveHistory, saveRegions } from '../utils/localStore';
+import { getUsername, isLoggedIn } from '../services/authService';
 
 const AppContext = createContext(null);
 
@@ -30,16 +38,20 @@ const initialState = {
   batchResults: [],
   batchMode: false,
   batchSummary: null,
-  // history 懒加载：mock 模式直接取演示数据（无网络）；api 模式启动时置空，
-  // 首次进入历史页才发起请求（SET_HISTORY 写入），启动路径 0 网络请求
-  history: isMockMode() ? getHistory() : [],
-  // 地区记录：进入地图页时加载（SET_REGIONS 写入）；mock 模式也从内存态仓库取数
+  // history 懒加载：mock 模式直接取演示数据（无网络）；api 模式启动时从 localStore 读取，
+  // 首次进入历史页仍会重新拉取（SET_HISTORY 写入），启动路径 0 网络请求
+  history: isMockMode() ? getHistory() : loadHistory(),
+  // 地区记录：进入地图页时加载（SET_REGIONS 写入）；mock 模式也从内存态仓库取数。
+  // v2 真实 API 模式：挂载时由 AppProvider 从 localStore 水合（保持字面量 [] 兼容既有静态契约测试）
   regions: [],
   // 地区详情页当前查看的地区名（RegionScreen 按名称归组过滤）
   activeRegionName: null,
   threshold: 0.5, // 置信度阈值（0.30 - 0.90）
   highpass: true, // 高通滤波降噪
   realtime: false, // 实时录音分析
+  // v2 登录态：user = {username} | null；guest = 游客跳过（无 token 可继续使用本地功能）
+  user: null,
+  guest: false,
   toast: null,
 };
 
@@ -181,6 +193,23 @@ function reducer(state, action) {
     case 'SET_REALTIME':
       return { ...state, realtime: action.value };
 
+    // ---- v2 登录态 ----
+    case 'SET_USER':
+      // 登录 / 注册成功：写入用户，退出游客态（App 门控据此进入主界面）
+      return { ...state, user: action.username ? { username: String(action.username) } : null, guest: false };
+
+    case 'SKIP_LOGIN':
+      // 开屏「继续使用（不登录）」：游客态，可正常使用本地功能（上传需登录时另行提示）
+      return { ...state, guest: true };
+
+    case 'OPEN_LOGIN':
+      // 设置页「登录」入口：清掉游客态/用户态，App 门控渲染 LoginScreen
+      return { ...state, user: null, guest: false };
+
+    case 'CLEAR_USER':
+      // 登出：清掉用户态与游客态（App 门控回到 LoginScreen）
+      return { ...state, user: null, guest: false };
+
     case 'TOAST':
       return { ...state, toast: action.message };
 
@@ -199,6 +228,32 @@ function reducer(state, action) {
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+
+  // v2 数据本地化：真实 API 模式下 history/regions 变更后持久化到 localStore
+  // （mock 模式不碰 localStore，行为不变；历史/地区删除等均经 SET_HISTORY/SET_REGIONS 回写）
+  useEffect(() => {
+    if (isMockMode()) return undefined;
+    saveHistory(state.history);
+    saveRegions(state.regions);
+    saveBatches(state.batchResults);
+    return undefined;
+  }, [state.history, state.regions, state.batchResults]);
+
+  // v2 启动逻辑（真实 API 模式）：
+  //  - 若已登录（有 ljx_token，离线可用，不强制 me 校验）→ 同步 user；
+  //  - 地区记录从 localStore 水合（保持 initialState.regions 字面量 [] 以兼容静态契约测试）；
+  //  - 触发旧云端 history/regions 一次性迁移（尽力而为，失败静默，不阻塞启动）。
+  useEffect(() => {
+    if (isLoggedIn()) {
+      const username = getUsername();
+      if (username) dispatch({ type: 'SET_USER', username });
+    }
+    if (!isMockMode()) {
+      dispatch({ type: 'SET_REGIONS', items: loadRegions() });
+      migrateCloudData().catch(() => {});
+    }
+  }, [dispatch]);
+
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
 }
 

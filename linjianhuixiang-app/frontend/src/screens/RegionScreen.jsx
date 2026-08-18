@@ -16,10 +16,11 @@ import LineChart from '../components/charts/LineChart';
 import RegionSummary from '../components/RegionSummary';
 import MapCanvas from '../components/map/MapCanvas';
 import { mapFromSummary } from '../components/map/mapUtils';
-import { deleteRegion, getRegions, renameRegion } from '../data/repository';
+import { deleteRegion, getRegions, renameRegion, uploadPublicRecord } from '../data/repository';
+import { getSignAnonymous, isLoggedIn } from '../services/authService';
 import { formatISODate } from '../utils/dates';
 import { humanizeBackendError } from '../utils/errorText';
-import { IconBack, IconChevronRight, IconTrash } from '../components/icons';
+import { IconBack, IconChevronRight, IconGlobe, IconTrash } from '../components/icons';
 
 export default function RegionScreen() {
   const { state, dispatch } = useApp();
@@ -31,6 +32,8 @@ export default function RegionScreen() {
   const [renaming, setRenaming] = useState(false);
   // 当前选中查看完整综合数据的记录 id（null = 未选中，保持列表 + 趋势）
   const [selectedId, setSelectedId] = useState(null);
+  // 上传到公共地图：请求中状态（防重复提交）
+  const [uploading, setUploading] = useState(false);
 
   const loadRegions = async () => {
     try {
@@ -93,6 +96,50 @@ export default function RegionScreen() {
     }
   };
 
+  /**
+   * 上传当前地区记录快照到公共地图（v2）：
+   *  - 未登录 → 提示「请先登录」并跳 LoginScreen；
+   *  - 有坐标（region.lat/lng）→ 直接传；无坐标 → 提示按地区名定位，后端 geocode 反查兜底；
+   *  - 失败 400「无法定位」→ 引导用户去地图页为该地区选点。
+   */
+  const uploadToPublic = async (r) => {
+    if (!isLoggedIn()) {
+      dispatch({ type: 'TOAST', message: '请先登录' });
+      dispatch({ type: 'OPEN_LOGIN' });
+      return;
+    }
+    const lv = r.detail && r.detail.livability ? r.detail.livability : {};
+    const hasCoords = Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lng));
+    if (!hasCoords) {
+      dispatch({ type: 'TOAST', message: '该地区无坐标，正在按地区名定位…' });
+    }
+    setUploading(true);
+    try {
+      const payload = {
+        regionName: r.name,
+        score: typeof lv.score === 'number' ? lv.score : 0,
+        confidence: typeof lv.confidence === 'number' ? lv.confidence : 0,
+        summary: r.detail,
+        isAnonymous: getSignAnonymous() === 'anonymous',
+      };
+      if (hasCoords) {
+        payload.lat = Number(r.lat);
+        payload.lng = Number(r.lng);
+      }
+      await Promise.resolve(uploadPublicRecord(payload));
+      dispatch({ type: 'TOAST', message: '已上传到公共地图' });
+    } catch (err) {
+      const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
+      if (/无法定位|请在地图上选点/.test(reason)) {
+        dispatch({ type: 'TOAST', message: '无法定位该地区，请在地图页为该地区选点后重试' });
+      } else {
+        dispatch({ type: 'TOAST', message: `上传失败：${reason}` });
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div>
       <AppBar
@@ -143,6 +190,17 @@ export default function RegionScreen() {
               />
             </div>
           )}
+
+          {/* 上传到公共地图（v2）：把该条地区记录快照发布到公共地图（登录后可用） */}
+          <Button
+            variant="sun"
+            icon={<IconGlobe size={18} />}
+            className="mb-3"
+            onClick={() => uploadToPublic(selected)}
+            disabled={uploading}
+          >
+            {uploading ? '上传中…' : '上传到公共地图'}
+          </Button>
 
           <RegionSummary summary={selected.detail} />
         </div>

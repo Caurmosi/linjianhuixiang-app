@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from . import config
 from .api import routes
+from .api.errors import ApiError
 
 app = FastAPI(
     title="林间回响 · 后端服务",
@@ -32,6 +33,15 @@ app.include_router(routes.router)
 # ---------------------------------------------------------------------------
 # 统一错误处理（前端 apiService 依赖 message 字段展示）
 # ---------------------------------------------------------------------------
+@app.exception_handler(ApiError)
+async def api_error_handler(request: Request, exc: ApiError):
+    """业务错误（登录/公共上传池）：统一 {"error", "detail"} 双字段。"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.message, "detail": exc.detail},
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(

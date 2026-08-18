@@ -1,6 +1,6 @@
 /**
  * SettingsScreen.jsx
- * 设置（「我的」Tab 内容）：置信度阈值滑杆 / 高通滤波开关 / 实时录音开关 / 后端地址 / 导出与说明
+ * 设置（「我的」Tab 内容）：账号与公开署名 / 置信度阈值滑杆 / 高通滤波开关 / 实时录音开关 / 后端地址 / 导出与说明
  */
 import { useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
@@ -11,7 +11,8 @@ import Chip from '../components/ui/Chip';
 import { exportReport } from '../utils/exportReport';
 import { getApiBase, getDataSource } from '../config/dataConfig.js';
 import { pingHealth } from '../data/repository';
-import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight } from '../components/icons';
+import { clearSession, getSignAnonymous, getUsername, isLoggedIn, logout, setSignAnonymous } from '../services/authService';
+import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight, IconUser } from '../components/icons';
 
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
@@ -73,9 +74,93 @@ export default function SettingsScreen() {
     dispatch({ type: 'TOAST', message: ok ? '报告已保存到手机相册（PDF 为后续版本）' : '保存失败，请重试' });
   };
 
+  // ---- v2 账号区 ----
+  const loggedIn = isLoggedIn();
+  const username = getUsername();
+  // 公开署名默认：本地 state 驱动 UI 高亮（localStorage 由 setSignAnonymous 写入）
+  const [signMode, setSignMode] = useState(() => getSignAnonymous());
+
+  /** 切换公开署名默认（用户名 / 匿名）：写 localStorage + 更新本地高亮 */
+  const onSetSign = (mode) => {
+    setSignAnonymous(mode);
+    setSignMode(mode);
+  };
+
+  /** 登出：调后端 logout（尽力而为）+ 清本地 token → App 门控回 LoginScreen */
+  const onLogout = async () => {
+    try {
+      await Promise.resolve(logout());
+    } catch (err) {
+      /* 后端不可达也允许本地登出 */
+    }
+    clearSession();
+    dispatch({ type: 'CLEAR_USER' });
+    dispatch({ type: 'TOAST', message: '已退出登录' });
+  };
+
+  /** 未登录 → 打开开屏登录（App 门控渲染 LoginScreen；登录成功后回到本页） */
+  const onOpenLogin = () => {
+    dispatch({ type: 'OPEN_LOGIN' });
+  };
+
   return (
     <div>
       <AppBar title="设置" onBack={() => dispatch({ type: 'BACK' })} />
+
+      {/* 账号与公开署名（v2） */}
+      <div className="eyebrow mb-2">账号与公开署名</div>
+      <div className="set-list">
+        <div className="set-row" onClick={loggedIn ? undefined : onOpenLogin}>
+          <div className="ic">
+            <IconUser size={18} />
+          </div>
+          <div className="t" style={{ flex: 1 }}>
+            <b>{loggedIn ? username || '已登录' : '未登录'}</b>
+            <span>{loggedIn ? '当前账号 · 上传公共地图默认署名如下' : '登录后可上传地区记录到公共地图'}</span>
+          </div>
+          {loggedIn ? (
+            <button className="appbar-action" onClick={onLogout}>
+              登出
+            </button>
+          ) : (
+            <IconChevronRight size={16} className="text-ink-faint" />
+          )}
+        </div>
+        {loggedIn && (
+          <>
+            <div className="set-row">
+              <div className="ic">
+                <IconShare size={18} />
+              </div>
+              <div className="t" style={{ flex: 1 }}>
+                <b>公开署名</b>
+                <span>上传公共地图时的默认署名（随上传快照，不影响已上传记录）</span>
+              </div>
+            </div>
+            <div className="px-4 pb-4 pt-1">
+              <div className="seg" style={{ marginBottom: 8 }}>
+                <button
+                  className={signMode === 'username' ? 'on' : ''}
+                  onClick={() => onSetSign('username')}
+                >
+                  用我的用户名
+                </button>
+                <button
+                  className={signMode === 'anonymous' ? 'on' : ''}
+                  onClick={() => onSetSign('anonymous')}
+                >
+                  匿名
+                </button>
+              </div>
+              <p className="faint text-[11px] leading-relaxed">
+                {signMode === 'anonymous'
+                  ? '上传时以「匿名用户」展示；记录仍归属你的账号，可在公共地图管理中撤回。'
+                  : '上传时显示你的用户名；公共地图对外仅展示到天的日期，坐标为近似位置（已模糊数百米）。'}
+              </p>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* 识别参数 */}
       <div className="eyebrow mb-2">识别参数</div>

@@ -15,7 +15,28 @@
  *    通过 Promise.resolve(...) 归一化「mock 同步 / api 异步」两种返回形态。
  *  - Node 测试环境（node --test）有全局 fetch，但 base 为空串 → URL 解析失败，
  *    会立即以「后端不可达」拒绝，不会真实联网挂起。
+ *
+ * v2 数据本地化（用户 2026-08-18 决策）：
+ *  - 识别计算仍云端（BirdNET 在后端，音频照传），但分析结果/历史/地区记录**落本地**
+ *    （localStore.js：ljx_history / ljx_regions / ljx_analysis / ljx_batches），App 升级不丢；
+ *  - history/regions 读写全部本地化：saveRegion/deleteRegion/renameRegion 不再写云端
+ *    /api/regions（避免多设备互相污染）；云端读取仅保留 getHistoryCloud/getRegionsCloud
+ *    供旧数据一次性迁移（repository.migrateCloudData）；
+ *  - deleteHistory 本地立即删除 + 尽力而为同步云端（保留既有云端删除兼容）；
+ *  - 登录系统：request 自动附带 Authorization: Bearer <ljx_token>；
+ *    公共地图：uploadPublicRecord / getMyPublicRecords / withdrawPublicRecord。
  */
+import {
+  loadHistory,
+  loadRegions,
+  saveAnalysis,
+  saveHistory,
+  saveRegions,
+} from '../utils/localStore.js';
+
+/** 本地会话键（authService 共用，避免循环依赖：authService → apiService，单向） */
+export const TOKEN_KEY = 'ljx_token';
+export const USERNAME_KEY = 'ljx_username';
 
 /** 解析后端基地址：localStorage.ljx_api_base（App 内运行时配置）→ VITE_API_BASE（构建期）→ 空串（同源 /api 代理） */
 function resolveApiBase() {
@@ -34,6 +55,17 @@ function resolveApiBase() {
   return '';
 }
 
+/** 读取登录 token（存储受限 / 未登录返回 null） */
+function readToken() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const v = localStorage.getItem(TOKEN_KEY);
+    return v && String(v).trim() ? String(v).trim() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /** 从错误对象提取人类可读的原因文本 */
 function reasonOf(e) {
   if (!e) return '未知错误';
@@ -48,12 +80,13 @@ function reasonOf(e) {
  * 异步请求（GET / POST multipart / JSON / DELETE / PATCH），fetch + AbortController 超时。
  * 基地址在每次请求时动态解析（resolveApiBase）：设置页保存的 localStorage.ljx_api_base
  * 即时生效，无需重启 App（不再于模块加载时缓存）。
+ * 鉴权：options.token 显式传入，或自动读取 localStorage.ljx_token（已登录时所有请求携带 Bearer）。
  * @param {string} path 如 /api/species
- * @param {object} options { method, formData, json, fn, timeoutMs }
+ * @param {object} options { method, formData, json, fn, timeoutMs, token }
  * @returns {Promise<any>} 解析后的 JSON
  * @throws 后端不可达 / 超时 / 非 JSON / HTTP 错误（均带语义与函数名）
  */
-async function request(path, options = {}) {
+export async function request(path, options = {}) {
   const fn = options.fn || path;
   const timeoutMs = options.timeoutMs != null ? options.timeoutMs : 8000;
   if (typeof fetch === 'undefined') {
@@ -64,12 +97,16 @@ async function request(path, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const hasJson = options.json !== undefined;
+  const headers = {};
+  if (hasJson) headers['Content-Type'] = 'application/json';
+  const token = options.token || readToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   let resp;
   try {
     resp = await fetch(url, {
       method: options.method || 'GET',
       body: hasJson ? JSON.stringify(options.json) : options.formData || undefined,
-      headers: hasJson ? { 'Content-Type': 'application/json' } : undefined,
+      headers,
       signal: controller.signal,
     });
   } catch (e) {
@@ -177,34 +214,184 @@ export function getSuggestions() {
   return request('/api/suggestions', { fn: 'getSuggestions' });
 }
 
-/** 历史记录 */
+// ---------------------------------------------------------------------------
+// v2 数据本地化：history / regions 读写本地化（真实 API 模式）
+//  - getHistory/getRegions 读 localStore；
+//  - saveRegion/deleteRegion/renameRegion 写 localStore（不再依赖云端 region_records 存储）；
+//  - getHistoryCloud/getRegionsCloud 仅供旧数据一次性迁移（repository.migrateCloudData）；
+//  - deleteHistory 本地删除 + 尽力而为同步云端（保留既有云端删除兼容）。
+// ---------------------------------------------------------------------------
+
+/** 历史记录列表（本地 localStore） */
 export function getHistory() {
+  return loadHistory();
+}
+
+/** 历史记录列表（云端，仅供旧数据迁移；旧版云端 history 拉取后落本地） */
+export function getHistoryCloud() {
   return request('/api/history', { fn: 'getHistory' });
 }
 
-/** 删除历史记录（DELETE /api/history/{id}） */
+/** 删除历史记录：本地立即删除，云端尽力而为同步（离线/失败静默，本地删除已生效） */
 export function deleteHistory(id) {
-  return request(`/api/history/${id}`, { method: 'DELETE', fn: 'deleteHistory' });
+  const removed = removeHistoryLocal(id);
+  try {
+    request(`/api/history/${id}`, { method: 'DELETE', fn: 'deleteHistory' }).catch(() => {
+      /* 云端同步失败静默（本地已删除） */
+    });
+  } catch (e) {
+    /* 同步失败不影响本地 */
+  }
+  return removed;
 }
 
-/** 地区记录列表（GET /api/regions） */
+/** 本地删除历史条目（按 id 过滤并落库） */
+function removeHistoryLocal(id) {
+  const list = loadHistory().filter((h) => !(h && h.id === id));
+  saveHistory(list);
+  return { ok: true, id };
+}
+
+/** 地区记录列表（本地 localStore） */
 export function getRegions() {
+  return loadRegions();
+}
+
+/** 地区记录列表（云端，仅供旧数据一次性迁移） */
+export function getRegionsCloud() {
   return request('/api/regions', { fn: 'getRegions' });
 }
 
-/** 保存地区记录（POST /api/regions，同名自动归组） */
-export function saveRegion(name, summary) {
-  return request('/api/regions', { method: 'POST', json: { name, summary }, fn: 'saveRegion' });
+/** 保存地区记录（本地；同名自动归组；可选 coords {lat,lng} 落库，供公共地图上传） */
+export function saveRegion(name, summary, coords) {
+  return saveRegionLocal(name, summary, coords);
 }
 
-/** 删除地区记录（DELETE /api/regions/{id}） */
+/** 本地保存地区记录（真实 API 模式不再写云端 /api/regions，避免多设备污染） */
+function saveRegionLocal(name, summary, coords) {
+  const list = loadRegions();
+  const nextId = list.reduce((m, r) => Math.max(m, Number(r && r.id) || 0), 0) + 1;
+  const lv = summary && summary.livability ? summary.livability : {};
+  const record = {
+    id: nextId,
+    name: String(name),
+    created_at: new Date().toISOString(),
+    detail: summary,
+    score: typeof lv.score === 'number' ? lv.score : null,
+  };
+  const c = coords || {};
+  if (Number.isFinite(Number(c.lat)) && Number.isFinite(Number(c.lng))) {
+    record.lat = Number(c.lat);
+    record.lng = Number(c.lng);
+  }
+  list.push(record);
+  saveRegions(list);
+  return { ...record };
+}
+
+/** 删除地区记录（本地）；不存在返回 false */
 export function deleteRegion(id) {
-  return request(`/api/regions/${id}`, { method: 'DELETE', fn: 'deleteRegion' });
+  const before = loadRegions();
+  const list = before.filter((r) => !(r && r.id === id));
+  if (list.length === before.length) return false;
+  saveRegions(list);
+  return { ok: true, id };
 }
 
-/** 重命名地区记录（PATCH /api/regions/{id}） */
+/** 重命名地区记录（本地）；不存在返回 false */
 export function renameRegion(id, name) {
-  return request(`/api/regions/${id}`, { method: 'PATCH', json: { name }, fn: 'renameRegion' });
+  const list = loadRegions();
+  const idx = list.findIndex((r) => r && r.id === id);
+  if (idx === -1) return false;
+  const updated = { ...list[idx], name: String(name) };
+  list[idx] = updated;
+  saveRegions(list);
+  return { ...updated };
+}
+
+// ---------------------------------------------------------------------------
+// v2 数据本地化：真实识别成功后结果落本地（saveAnalysis + 追加 saveHistory）
+// ---------------------------------------------------------------------------
+
+/** 秒数 → "M:SS" 时长文本（非法返回 '—'，与演示历史 duration 字段形态一致） */
+function formatDuration(sec) {
+  const s = Number(sec);
+  if (!Number.isFinite(s) || s < 0) return '—';
+  const m = Math.floor(s / 60);
+  const r = Math.round(s % 60);
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+/** 由分析结果构建历史条目（保持既有 history 条目字段形状） */
+function historyItemFromAnalysis(a, id) {
+  const lv = a && a.livability && typeof a.livability === 'object' ? a.livability : {};
+  const speciesList = a && Array.isArray(a.species) ? a.species : [];
+  const name = (a && a.recording) || '录音.wav';
+  return {
+    id,
+    name,
+    species: speciesList.length > 0 ? speciesList.length : typeof a.speciesCount === 'number' ? a.speciesCount : 0,
+    score: typeof lv.score === 'number' ? lv.score : 0,
+    duration: formatDuration(a && a.durationSec),
+    noise: typeof lv.noise === 'number' ? lv.noise : 0,
+    bio: typeof lv.bio === 'number' ? lv.bio : 0,
+    sound: typeof lv.sound === 'number' ? lv.sound : 0,
+    created_at: new Date().toISOString(),
+    analysis: a,
+  };
+}
+
+/**
+ * 真实 /api/analyze 成功后：结果落本地（saveAnalysis + 追加 saveHistory，新在前）。
+ * 仅在真实识别成功时调用——演示兜底 / 无音频组合结果不落库。
+ * @param {object} analysis /api/analyze 返回的分析结果
+ * @param {string} name 录音名（快照缺 recording 时兜底）
+ */
+function persistAnalysis(analysis, name) {
+  if (!analysis || typeof analysis !== 'object') return analysis;
+  const normalized = analysis.recording ? analysis : { ...analysis, recording: name || '录音.wav' };
+  saveAnalysis(normalized);
+  const list = loadHistory();
+  let id = Date.now();
+  while (list.some((h) => h && h.id === id)) id += 1;
+  const item = historyItemFromAnalysis(normalized, id);
+  // 幂等：同一 id 已存在则不重复追加（本地历史由本地管理，避免重复分析同一文件时重复入史）
+  if (!list.some((h) => h && h.id === id)) {
+    saveHistory([item, ...list]);
+  }
+  return normalized;
+}
+
+// ---------------------------------------------------------------------------
+// 公共地图（v2）：上传 / 我的公开记录 / 撤回
+// ---------------------------------------------------------------------------
+
+/**
+ * 上传地区记录到公共地图（POST /api/public/records，Bearer token）。
+ * body: { regionName, lat?, lng?, score, confidence?, summary?, isAnonymous, overrideCoords? }
+ * 坐标解析：overrideCoords > lat/lng > geocode 反查；全失败 400「无法定位该地区，请在地图上选点」。
+ * @param {object} payload
+ * @returns {Promise<{id:number, regionName:string, score:number, confidence:number, coordsSource:string, clusterKey:string, createdAt:string}>}
+ */
+export function uploadPublicRecord(payload) {
+  return request('/api/public/records', { method: 'POST', json: payload, fn: 'uploadPublicRecord' });
+}
+
+/**
+ * 我的公开记录（GET /api/public/me，Bearer token）。
+ * @returns {Promise<{records:Array<{id:number, regionName:string, score:number, createdAt:string, isAnonymous:boolean, username:string}>}>}
+ */
+export function getMyPublicRecords() {
+  return request('/api/public/me', { method: 'GET', fn: 'getMyPublicRecords' });
+}
+
+/**
+ * 撤回一条公开记录（DELETE /api/public/records/{id}，Bearer token；物理删除，仅归属者可删）。
+ * @param {number|string} id 公开记录 id
+ * @returns {Promise<{ok:boolean, id:number}>}
+ */
+export function withdrawPublicRecord(id) {
+  return request(`/api/public/records/${id}`, { method: 'DELETE', fn: 'withdrawPublicRecord' });
 }
 
 /**
@@ -220,7 +407,8 @@ export function getGeocode(q) {
 
 /**
  * 根据录音名 + 覆盖项构建分析结果（async）。
- * - 若 overrides.audioFile 为 File/Blob：上传到 POST /api/analyze，返回真实完整分析；
+ * - 若 overrides.audioFile 为 File/Blob：上传到 POST /api/analyze，返回真实完整分析，
+ *   成功后结果落本地（saveAnalysis + 追加 saveHistory）；
  * - 否则（演示/历史流程，只有录音名）：组合后端各数据端点，应用与 mock 一致的合并规则。
  */
 export async function buildAnalysis(name, overrides = {}) {
@@ -229,7 +417,9 @@ export async function buildAnalysis(name, overrides = {}) {
     const formData = new FormData();
     formData.append('file', audioFile, audioFile.name || name || 'recording.wav');
     if (overrides.threshold != null) formData.append('threshold', String(overrides.threshold));
-    return request('/api/analyze', { method: 'POST', formData, fn: 'buildAnalysis' });
+    const result = await request('/api/analyze', { method: 'POST', formData, fn: 'buildAnalysis' });
+    persistAnalysis(result, name);
+    return result;
   }
   const parts = await fetchBaselineParts();
   return composeAnalysis(name, parts, overrides || {});

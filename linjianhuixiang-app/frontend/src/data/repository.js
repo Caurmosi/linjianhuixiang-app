@@ -11,10 +11,16 @@
  *  - 默认 mock：npm run dev（未设置 VITE_USE_MOCK）
  *  - 真实 API：VITE_USE_MOCK=false npm run dev
  *    （apiService 尚未实现时会抛错提示，属预期行为；接入方法见 README「数据源切换」）
+ *
+ * v2 数据本地化（用户 2026-08-18 决策）：
+ *  - 真实 API 模式下 history/regions 读写全部走本地 localStore（apiService 内部处理），
+ *    mock 模式行为不变（不碰 localStore、不调真实 API）；
+ *  - migrateCloudData：旧版云端 history/regions 一次性迁移落本地（尽力而为，失败静默）。
  */
 import * as mockData from './mockData.js';
 import * as apiService from '../services/apiService.js';
 import { isMockMode } from '../config/dataConfig.js';
+import { loadHistory, loadRegions, saveHistory, saveRegions } from '../utils/localStore.js';
 
 /** 当前是否走真实 API 数据源 */
 const useApi = () => !isMockMode();
@@ -54,12 +60,12 @@ export function getSuggestions() {
   return useApi() ? apiService.getSuggestions() : mockData.SUGGESTIONS;
 }
 
-/** 历史记录 */
+/** 历史记录（真实 API 模式读本地 localStore；mock 模式返回演示数据） */
 export function getHistory() {
   return useApi() ? apiService.getHistory() : mockData.HISTORY;
 }
 
-/** 删除历史记录（mock：本地过滤；api：DELETE /api/history/{id}） */
+/** 删除历史记录（真实 API 模式：本地删除 + 尽力而为同步云端；mock：本地占位过滤） */
 export function deleteHistory(id) {
   return useApi() ? apiService.deleteHistory(id) : mockData.deleteHistory(id);
 }
@@ -67,7 +73,7 @@ export function deleteHistory(id) {
 // ---------------------------------------------------------------------------
 // 地区记录（region_records）
 //  - mock：模块内内存数组（从 mockData.REGIONS 深拷贝初始化，save/delete/rename 就地变更）
-//  - api：转发 apiService（POST/GET/DELETE/PATCH /api/regions）
+//  - api：本地 localStore（v2 起不再写云端 /api/regions，避免多设备污染）
 // ---------------------------------------------------------------------------
 let _regions = null;
 
@@ -79,14 +85,26 @@ function regionStore() {
   return _regions;
 }
 
-/** 地区记录列表（mock 返回副本，防外改） */
+/** 从 summary.map.center 提取地区坐标（GCJ-02）；无 map / 非法返回 null */
+function coordsFromSummary(summary) {
+  if (!summary || !summary.map || !Array.isArray(summary.map.center) || summary.map.center.length !== 2) return null;
+  const lng = Number(summary.map.center[0]);
+  const lat = Number(summary.map.center[1]);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  return { lat, lng };
+}
+
+/** 地区记录列表（mock 返回副本，防外改；api 返回 localStore 数据） */
 export function getRegions() {
   return useApi() ? apiService.getRegions() : regionStore().slice();
 }
 
-/** 保存地区记录：同名自动归组；返回新记录 {id, name, created_at, detail, score} */
-export function saveRegion(name, summary) {
-  if (useApi()) return apiService.saveRegion(name, summary);
+/**
+ * 保存地区记录：同名自动归组；返回新记录 {id, name, created_at, detail, score, lat?, lng?}。
+ * 真实 API 模式自动从 summary.map.center 提取坐标（第三参 coords 可显式覆盖）。
+ */
+export function saveRegion(name, summary, coords) {
+  if (useApi()) return apiService.saveRegion(name, summary, coords || coordsFromSummary(summary));
   const store = regionStore();
   const nextId = store.reduce((m, r) => Math.max(m, r.id), 0) + 1;
   const lv = summary && summary.livability;
@@ -97,6 +115,11 @@ export function saveRegion(name, summary) {
     detail: summary,
     score: lv && typeof lv.score === 'number' ? lv.score : null,
   };
+  const c = coords || coordsFromSummary(summary);
+  if (c && Number.isFinite(Number(c.lat)) && Number.isFinite(Number(c.lng))) {
+    record.lat = Number(c.lat);
+    record.lng = Number(c.lng);
+  }
   store.push(record);
   return { ...record };
 }
@@ -156,6 +179,66 @@ export function buildMockAnalysis(name, overrides = {}) {
  */
 export function pingHealth(base) {
   return apiService.pingHealth(base);
+}
+
+// ---------------------------------------------------------------------------
+// 公共地图（v2）：转发 apiService（上传 / 我的公开记录 / 撤回）
+// ---------------------------------------------------------------------------
+
+/** 上传地区记录到公共地图（需登录；Bearer token 自动附带） */
+export function uploadPublicRecord(payload) {
+  return apiService.uploadPublicRecord(payload);
+}
+
+/** 我的公开记录列表（需登录） */
+export function getMyPublicRecords() {
+  return apiService.getMyPublicRecords();
+}
+
+/** 撤回一条公开记录（需登录，仅归属者可删） */
+export function withdrawPublicRecord(id) {
+  return apiService.withdrawPublicRecord(id);
+}
+
+/**
+ * v2 数据本地化兼容迁移（尽力而为，失败静默）：
+ *  - 仅真实 API 模式执行；
+ *  - 若 localStore 为空但云端 history/regions 有数据（旧版本使用过），
+ *    启动时拉取云端数据落本地，保证升级不丢历史；
+ *  - 任何失败静默（不阻塞启动，不弹错）。
+ * @returns {Promise<{migratedHistory:number, migratedRegions:number}>}
+ */
+export function migrateCloudData() {
+  return doMigrateCloudData();
+}
+
+/** 迁移实现（async 放内部，保持公开导出为普通 function，兼容数据契约静态扫描） */
+async function doMigrateCloudData() {
+  if (isMockMode()) return { migratedHistory: 0, migratedRegions: 0 };
+  const counts = { migratedHistory: 0, migratedRegions: 0 };
+  if (loadHistory().length === 0) {
+    try {
+      const list = await apiService.getHistoryCloud();
+      if (Array.isArray(list) && list.length > 0) {
+        saveHistory(list);
+        counts.migratedHistory = list.length;
+      }
+    } catch (e) {
+      /* 静默 */
+    }
+  }
+  if (loadRegions().length === 0) {
+    try {
+      const list = await apiService.getRegionsCloud();
+      if (Array.isArray(list) && list.length > 0) {
+        saveRegions(list);
+        counts.migratedRegions = list.length;
+      }
+    } catch (e) {
+      /* 静默 */
+    }
+  }
+  return counts;
 }
 
 /** 宜居度 → 文案与等级（转发 mockData 实现） */

@@ -124,3 +124,121 @@ class Health(BaseModel):
     db: str
     uptimeSec: float
     timestamp: str
+
+
+# ---------------------------------------------------------------------------
+# 登录系统（用户名 + 密码）
+# ---------------------------------------------------------------------------
+class RegisterRequest(BaseModel):
+    """注册请求：用户名 + 密码。
+
+    用户名/密码规则（长度、字符集、≥6 位）在路由层校验，返回 400 而非 422。
+    """
+    username: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    """登录请求：用户名 + 密码。"""
+    username: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    """登录/注册响应：token + username；注册额外带 createdAt。"""
+    token: str
+    username: str
+    createdAt: str | None = None
+
+
+class MeResponse(BaseModel):
+    """GET /api/auth/me 响应。"""
+    username: str
+    createdAt: str
+
+
+# ---------------------------------------------------------------------------
+# 公共上传池
+# ---------------------------------------------------------------------------
+class OverrideCoords(BaseModel):
+    """覆盖坐标（GCJ-02，与高德瓦片一致）。"""
+    lat: float = Field(..., ge=-90, le=90)
+    lng: float = Field(..., ge=-180, le=180)
+
+
+class PublicRecordCreate(BaseModel):
+    """公开上传请求：地区名 + 坐标（可选）+ 评分 + 置信度（可选）+ 摘要（可选）。
+
+    坐标解析顺序：overrideCoords > lat/lng > geocode 反查（路由层处理）。
+    score 在路由层 clamp 到 0-100（不在此校验，避免 422）。
+    """
+    regionName: str = Field(..., min_length=1, max_length=100)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lng: float | None = Field(default=None, ge=-180, le=180)
+    score: int
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    summary: dict | None = None
+    isAnonymous: bool = False
+    overrideCoords: OverrideCoords | None = None
+
+
+class PublicRecordResponse(BaseModel):
+    """公开上传成功响应。"""
+    id: int
+    regionName: str
+    score: int
+    confidence: float
+    coordsSource: str
+    clusterKey: str
+    createdAt: str
+
+
+class ClusterItem(BaseModel):
+    """聚合点单条：模糊坐标 + 加权均值 + 区间 + 时间窗（到天）。"""
+    id: str
+    regionName: str
+    lat: float
+    lng: float
+    n: int
+    score: float
+    scoreMin: int
+    scoreMax: int
+    confidenceAvg: float
+    createdFrom: str
+    createdTo: str
+
+
+class ClusterListResponse(BaseModel):
+    """GET /api/public/clusters 响应。"""
+    clusters: list[ClusterItem]
+    total: int
+
+
+class ClusterSample(BaseModel):
+    """聚合点样本：昵称/匿名 + 日期（到天）+ 评分（不返回任何坐标）。"""
+    nickname: str
+    isAnonymous: bool
+    date: str
+    score: int
+    confidence: float
+
+
+class ClusterDetailResponse(BaseModel):
+    """GET /api/public/clusters/{cluster_key} 响应。"""
+    cluster: ClusterItem
+    samples: list[ClusterSample]
+
+
+class MyPublicRecord(BaseModel):
+    """我的公开记录单条。"""
+    id: int
+    regionName: str
+    score: int
+    createdAt: str
+    isAnonymous: bool
+    username: str | None = None
+
+
+class MyPublicRecordsResponse(BaseModel):
+    """GET /api/public/me 响应。"""
+    records: list[MyPublicRecord]
