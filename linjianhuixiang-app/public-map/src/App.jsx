@@ -388,6 +388,7 @@ export default function App() {
   const [filters, setFilters] = useState({ region: '', minScore: '', maxScore: '', range: 'all' });
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+  const [candidates, setCandidates] = useState(null); // 同名歧义候选地点 [{name,lng,lat}]
 
   // 账号（与 App 互通）
   const [user, setUser] = useState(null); // {token, username}
@@ -660,7 +661,8 @@ export default function App() {
   };
 
   /** 应用检索/筛选：地区名 → 先 geocode 定位（flyTo）再按 region 过滤；纯评分/时间 → 直接过滤
-   *  regionOverride：搜索框输入后立刻回车时，用输入框实时值（避免 state/ref 未同步读到旧值） */
+   *  regionOverride：搜索框输入后立刻回车时，用输入框实时值（避免 state/ref 未同步读到旧值）
+   *  同名歧义（如「西湖」会命中台湾西湖乡）：多结果 → 展示候选列表让用户选，不自动跳 */
   const applyFilters = useCallback(
     async (regionOverride) => {
       const map = mapRef.current;
@@ -679,30 +681,48 @@ export default function App() {
         if (!results || results.length === 0) {
           setToastMsg(`未找到该地点：${region}`);
           setTimeout(() => setToastMsg(null), 3200);
+          setCandidates(null);
           doFetch(map && mapLoadedRef.current ? expandBbox(currentViewportBbox(map)) : worldBbox(), true);
           return;
         }
-        const hit = results[0];
-        if (map && mapLoadedRef.current) {
-          map.flyTo({ center: [hit.lng, hit.lat], zoom: 12, essential: true, duration: 1200 });
-          // flyTo 动画结束后，按新视野 bbox + region 过滤拉取（不依赖 moveend 时序）
-          setTimeout(() => {
-            const b = mapRef.current && mapRef.current.getBounds();
-            if (b) {
-              doFetch(
-                expandBbox({ minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() }),
-                true
-              );
-            }
-          }, 1400);
-        } else {
-          doFetch(worldBbox(), true);
+        if (results.length === 1) {
+          setCandidates(null);
+          flyToPlace(results[0]);
+          return;
         }
+        // 同名歧义：展示候选（高德行政区优先可能排到台湾等，用户自选最稳）
+        setCandidates(results);
+        setToastMsg(`找到 ${results.length} 个「${region}」，请选择要定位的地点`);
+        setTimeout(() => setToastMsg(null), 3600);
         return;
       }
 
       // 无地区名：纯评分/时间筛选 → 当前视野直接过滤
+      setCandidates(null);
       doFetch(map && mapLoadedRef.current ? expandBbox(currentViewportBbox(map)) : worldBbox(), true);
+    },
+    [loadClusters]
+  );
+
+  /** 飞到指定地点（geocode 结果，GCJ-02）并按 region 过滤拉取 */
+  const flyToPlace = useCallback(
+    (place) => {
+      const map = mapRef.current;
+      const doFetch = (bbox, updateTotal) => loadClusters(bbox || worldBbox(), { updateTotal });
+      if (map && mapLoadedRef.current) {
+        map.flyTo({ center: [place.lng, place.lat], zoom: 12, essential: true, duration: 1200 });
+        setTimeout(() => {
+          const b = mapRef.current && mapRef.current.getBounds();
+          if (b) {
+            doFetch(
+              expandBbox({ minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() }),
+              true
+            );
+          }
+        }, 1400);
+      } else {
+        doFetch(worldBbox(), true);
+      }
     },
     [loadClusters]
   );
@@ -711,6 +731,7 @@ export default function App() {
   const clearFilters = () => {
     setFilters({ region: '', minScore: '', maxScore: '', range: 'all' });
     filtersRef.current = { region: '', minScore: '', maxScore: '', range: 'all' };
+    setCandidates(null);
     const map = mapRef.current;
     if (map && mapLoadedRef.current) {
       map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, essential: true, duration: 1000 });
@@ -1001,6 +1022,34 @@ export default function App() {
           清除
         </button>
       </div>
+
+      {/* 同名歧义候选（如「西湖」可能命中台湾西湖乡，用户自选最稳） */}
+      {candidates && candidates.length > 0 && (
+        <div className="ljx-candidates">
+          <span className="ljx-candidates-label">找到多个同名地点，选择要定位的：</span>
+          {candidates.map((c, idx) => (
+            <button
+              key={`${c.name}-${idx}`}
+              type="button"
+              className="ljx-candidate-btn"
+              onClick={() => {
+                flyToPlace(c);
+                setCandidates(null);
+              }}
+            >
+              {c.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="ljx-candidate-close"
+            onClick={() => setCandidates(null)}
+            title="关闭候选"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <main className="ljx-map-wrap">
         <div ref={containerRef} className="ljx-map-canvas" />

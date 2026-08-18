@@ -527,3 +527,43 @@ body {
   color: #176a42;
   border-color: #b7e3c8;
 }
+
+/* 同名歧义候选条 */
+.ljx-candidates {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: #f4faf6;
+  border-bottom: 1px solid #e6ece8;
+}
+.ljx-candidates-label {
+  font-size: 12px;
+  color: #5b7266;
+}
+.ljx-candidate-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #cfe3d6;
+  border-radius: 14px;
+  background: #fff;
+  color: #176a42;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ljx-candidate-btn:hover {
+  background: #e6f6ec;
+  border-color: #9fd1b2;
+}
+.ljx-candidate-close {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #8aa096;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
