@@ -115,13 +115,12 @@ export function mapFromSummary(summary) {
 }
 
 /** 高德瓦片子域随机（webrd0{1..4} 随机选一个固定，实测无需 key）。
- *  style=7：路网底图，注记/POI 相对少（style=8 注记过多），但实测仍含
- *  「西白瞳村/竹林精舍/S307」等 POI 文字且无法关闭 → 简化固定视图已改用
- *  OpenFreeMap 矢量瓦片（见 utils/simplifiedStyle.js + MapCanvas simplified prop），
+ *  style=8：标准版底图（道路/注记较全，观感接近高德 App 默认，较 style=7 旧线划样式新）。
+ *  简化固定视图已用 OpenFreeMap 矢量瓦片（见 utils/simplifiedStyle.js + MapCanvas simplified prop），
  *  本函数仅保留给编辑态默认底图（兼容现状）。 */
 export function pickAmapTileUrl() {
   const sub = 1 + Math.floor(Math.random() * 4);
-  return `https://webrd0${sub}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}`;
+  return `https://webrd0${sub}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}`;
 }
 
 /**

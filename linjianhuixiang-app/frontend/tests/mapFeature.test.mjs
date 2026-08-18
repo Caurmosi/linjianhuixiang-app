@@ -141,12 +141,12 @@ describe('normalizeMapData / mapFromSummary（mapData 构建与读取）', () =>
 });
 
 describe('高德瓦片 URL（无 key，编辑态底图）', () => {
-  test('pickAmapTileUrl：webrd0{1..4} 随机子域 + style=7 + x/y/z 模板（编辑态默认底图；注记关闭见 simplifiedStyle）', () => {
+  test('pickAmapTileUrl：webrd0{1..4} 随机子域 + style=8 + x/y/z 模板（编辑态默认底图；观感新于 style=7 线划样式）', () => {
     for (let i = 0; i < 20; i++) {
       const url = pickAmapTileUrl();
       assert.match(url, /^https:\/\/webrd0[1-4]\.is\.autonavi\.com\/appmaptile\?lang=zh_cn/);
-      assert.ok(url.includes('style=7'), '底图应为 style=7（路网；注记相对少，编辑态可用）');
-      assert.ok(!url.includes('style=8'), '不应使用注记过多的 style=8');
+      assert.ok(url.includes('style=8'), '底图应为 style=8（标准版，观感较新）');
+      assert.ok(!url.includes('style=7'), '不应使用旧线划样式 style=7');
       assert.ok(url.includes('{x}') && url.includes('{y}') && url.includes('{z}'), '应含瓦片坐标模板');
     }
   });

@@ -691,10 +691,10 @@ def proxy_tile(z: int, x: int, y: int) -> Response:
     if not (1 <= z <= 19 and 0 <= x < (1 << z) and 0 <= y < (1 << z)):
         raise HTTPException(status_code=400, detail="瓦片坐标越界")
     sub = _TILE_SUBDOMAINS[(x + y + z) % len(_TILE_SUBDOMAINS)]
-    # 注意：lang=zh_cn&size=1&scale=1 必须齐全，否则高德返回 404
+    # 注意：lang=zh_cn&size=1&scale=1 必须齐全，否则高德返回 404；style=8 为标准版（style=7 为旧线划样式）
     url = (
         f"https://{sub}.is.autonavi.com/appmaptile?"
-        f"lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}"
+        f"lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
     )
     try:
         resp = requests.get(url, headers=_TILE_HEADERS, timeout=8)
