@@ -276,6 +276,25 @@ class Database:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def update_password(self, user_id: int, new_hash: str) -> bool:
+        """更新密码哈希；用户存在返回 True。"""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (str(new_hash), int(user_id)),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def delete_user_tokens(self, user_id: int) -> int:
+        """删除某用户的全部 token（改密码后强制下线所有设备）；返回删除条数。"""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM auth_tokens WHERE user_id = ?", (int(user_id),)
+            )
+            self._conn.commit()
+            return cur.rowcount
+
     # ---------------------------------------------------------------- 公共上传池
     @staticmethod
     def _public_row(row: sqlite3.Row) -> dict:

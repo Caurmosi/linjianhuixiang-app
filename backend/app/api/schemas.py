@@ -157,6 +157,12 @@ class MeResponse(BaseModel):
     createdAt: str
 
 
+class ChangePasswordRequest(BaseModel):
+    """修改密码请求：旧密码 + 新密码。"""
+    oldPassword: str
+    newPassword: str
+
+
 # ---------------------------------------------------------------------------
 # 公共上传池
 # ---------------------------------------------------------------------------

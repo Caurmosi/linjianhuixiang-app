@@ -121,3 +121,58 @@ def test_logout(client):
 def test_logout_requires_header(client):
     """登出缺 header → 401。"""
     assert client.post("/api/auth/logout").status_code == 401
+
+
+def test_change_password_ok(client):
+    """改密码成功：旧 token 全部失效，新密码可登录、旧密码不可。"""
+    token = _register(client, "改密用户", "oldpass123").json()["token"]
+    r = client.post(
+        "/api/auth/change-password",
+        json={"oldPassword": "oldpass123", "newPassword": "newpass456"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["droppedTokens"] >= 1
+    # 旧 token 已失效
+    assert client.get("/api/auth/me", headers=_auth(token)).status_code == 401
+    # 新密码可登录
+    r2 = client.post("/api/auth/login", json={"username": "改密用户", "password": "newpass456"})
+    assert r2.status_code == 200
+    assert r2.json()["username"] == "改密用户"
+    # 旧密码不可登录
+    r3 = client.post("/api/auth/login", json={"username": "改密用户", "password": "oldpass123"})
+    assert r3.status_code == 401
+
+
+def test_change_password_wrong_old_401(client):
+    """旧密码错误 → 401。"""
+    token = _register(client, "改密错旧", "oldpass123").json()["token"]
+    r = client.post(
+        "/api/auth/change-password",
+        json={"oldPassword": "wrong", "newPassword": "newpass456"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 401
+    assert "error" in r.json()
+
+
+def test_change_password_short_new_400(client):
+    """新密码过短 → 400。"""
+    token = _register(client, "改密短新", "oldpass123").json()["token"]
+    r = client.post(
+        "/api/auth/change-password",
+        json={"oldPassword": "oldpass123", "newPassword": "123"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 400
+
+
+def test_change_password_requires_auth(client):
+    """未登录 → 401。"""
+    r = client.post(
+        "/api/auth/change-password",
+        json={"oldPassword": "oldpass123", "newPassword": "newpass456"},
+    )
+    assert r.status_code == 401

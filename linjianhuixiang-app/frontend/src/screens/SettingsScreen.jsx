@@ -11,7 +11,7 @@ import Chip from '../components/ui/Chip';
 import { exportReport } from '../utils/exportReport';
 import { getApiBase, getDataSource } from '../config/dataConfig.js';
 import { pingHealth } from '../data/repository';
-import { clearSession, getSignAnonymous, getUsername, isLoggedIn, logout, setSignAnonymous } from '../services/authService';
+import { clearSession, changePassword, getSignAnonymous, getUsername, isLoggedIn, logout, setSignAnonymous } from '../services/authService';
 import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight, IconUser } from '../components/icons';
 
 export default function SettingsScreen() {
@@ -103,6 +103,47 @@ export default function SettingsScreen() {
     dispatch({ type: 'OPEN_LOGIN' });
   };
 
+  // ---- 修改密码 ----
+  const [showPwd, setShowPwd] = useState(false);
+  const [oldPwd, setOldPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [pwdErr, setPwdErr] = useState('');
+  const [pwdBusy, setPwdBusy] = useState(false);
+
+  /** 提交修改密码：成功 → 清会话回登录页（后端已吊销旧 token） */
+  const onSubmitPwd = async () => {
+    setPwdErr('');
+    if (!oldPwd || !newPwd) {
+      setPwdErr('请填写旧密码与新密码');
+      return;
+    }
+    if (newPwd.length < 6) {
+      setPwdErr('新密码至少 6 个字符');
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      setPwdErr('两次输入的新密码不一致');
+      return;
+    }
+    setPwdBusy(true);
+    try {
+      await changePassword(oldPwd, newPwd);
+      clearSession();
+      dispatch({ type: 'CLEAR_USER' });
+      setShowPwd(false);
+      setOldPwd('');
+      setNewPwd('');
+      setConfirmPwd('');
+      dispatch({ type: 'TOAST', message: '密码已修改，请用新密码重新登录' });
+    } catch (err) {
+      const msg = (err && err.error) || (err && err.message) || '修改失败，请检查后重试';
+      setPwdErr(msg);
+    } finally {
+      setPwdBusy(false);
+    }
+  };
+
   return (
     <div>
       <AppBar title="设置" onBack={() => dispatch({ type: 'BACK' })} />
@@ -128,6 +169,51 @@ export default function SettingsScreen() {
         </div>
         {loggedIn && (
           <>
+            <div className="set-row" onClick={() => setShowPwd((v) => !v)}>
+              <div className="ic">
+                <IconInfo size={18} />
+              </div>
+              <div className="t" style={{ flex: 1 }}>
+                <b>修改密码</b>
+                <span>修改后需重新登录</span>
+              </div>
+              <IconChevronRight size={16} className="text-ink-faint" />
+            </div>
+            {showPwd && (
+              <div className="px-4 pb-4 pt-1">
+                <div className="mb-2">
+                  <input
+                    type="password"
+                    className="input w-full"
+                    placeholder="旧密码"
+                    value={oldPwd}
+                    onChange={(e) => setOldPwd(e.target.value)}
+                  />
+                </div>
+                <div className="mb-2">
+                  <input
+                    type="password"
+                    className="input w-full"
+                    placeholder="新密码（至少 6 位）"
+                    value={newPwd}
+                    onChange={(e) => setNewPwd(e.target.value)}
+                  />
+                </div>
+                <div className="mb-2">
+                  <input
+                    type="password"
+                    className="input w-full"
+                    placeholder="确认新密码"
+                    value={confirmPwd}
+                    onChange={(e) => setConfirmPwd(e.target.value)}
+                  />
+                </div>
+                {pwdErr && <p className="mb-2 text-[12px] text-danger">{pwdErr}</p>}
+                <Button variant="primary" disabled={pwdBusy} onClick={onSubmitPwd} style={{ width: '100%' }}>
+                  {pwdBusy ? '提交中…' : '确认修改'}
+                </Button>
+              </div>
+            )}
             <div className="set-row">
               <div className="ic">
                 <IconShare size={18} />

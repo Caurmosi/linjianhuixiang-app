@@ -120,6 +120,25 @@ export function me() {
 }
 
 /**
+ * 修改密码（POST /api/auth/change-password，Bearer token）→ {ok, droppedTokens}。
+ * 成功后后端已吊销该账号全部 token，调用方需清本地会话并引导重新登录。
+ * @param {string} oldPassword
+ * @param {string} newPassword
+ * @returns {Promise<{ok:boolean, droppedTokens:number}>}
+ */
+export function changePassword(oldPassword, newPassword) {
+  return request('/api/auth/change-password', {
+    method: 'POST',
+    token: getToken(),
+    json: {
+      oldPassword: String(oldPassword == null ? '' : oldPassword),
+      newPassword: String(newPassword == null ? '' : newPassword),
+    },
+    fn: 'changePassword',
+  });
+}
+
+/**
  * 公开署名默认：'username'（用我的用户名）| 'anonymous'（匿名）。
  * @returns {'username'|'anonymous'}
  */

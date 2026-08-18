@@ -486,6 +486,28 @@ def logout(authorization: str | None = Header(default=None)) -> dict:
     return {"ok": True}
 
 
+@router.post("/api/auth/change-password", status_code=200, tags=["auth"])
+def change_password(
+    payload: schemas.ChangePasswordRequest,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """修改密码：校验旧密码 → 更新哈希 → 删除该用户全部 token（强制重新登录）。
+
+    旧密码错 → 401；新密码不合法 → 400。
+    """
+    user = deps.get_current_user(authorization)
+    err = _validate_password(payload.newPassword)
+    if err:
+        raise ApiError(400, err, err)
+    db = database.get_db()
+    full = db.get_user_by_id(user["id"])
+    if full is None or not _verify_password(payload.oldPassword, full["password_hash"]):
+        raise ApiError(401, "旧密码不正确", "旧密码验证失败")
+    db.update_password(user["id"], _hash_password(payload.newPassword))
+    dropped = db.delete_user_tokens(user["id"])
+    return {"ok": True, "droppedTokens": dropped}
+
+
 @router.get("/api/auth/me", response_model=schemas.MeResponse, tags=["auth"])
 def me(authorization: str | None = Header(default=None)) -> dict:
     """当前登录用户信息；token 缺失/无效 → 401。"""
