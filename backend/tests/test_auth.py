@@ -176,3 +176,53 @@ def test_change_password_requires_auth(client):
         json={"oldPassword": "oldpass123", "newPassword": "newpass456"},
     )
     assert r.status_code == 401
+
+
+def test_sync_backup_roundtrip(client):
+    """备份上传 → 读取一致；未登录 401；覆盖更新。"""
+    token = _register(client, "同步甲", "secret123").json()["token"]
+    assert client.get("/api/sync/backup").status_code == 401
+
+    r = client.post(
+        "/api/sync/backup",
+        json={"payload": '{"v":1,"history":[]}'},
+        headers=_auth(token),
+    )
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+    r = client.get("/api/sync/backup", headers=_auth(token))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["payload"] == '{"v":1,"history":[]}'
+    assert body["updatedAt"]
+
+    # 覆盖更新
+    client.post("/api/sync/backup", json={"payload": '{"v":2}'}, headers=_auth(token))
+    assert client.get("/api/sync/backup", headers=_auth(token)).json()["payload"] == '{"v":2}'
+
+
+def test_sync_backup_none_404(client):
+    """无备份 → 404。"""
+    token = _register(client, "同步乙", "secret123").json()["token"]
+    r = client.get("/api/sync/backup", headers=_auth(token))
+    assert r.status_code == 404
+    assert "error" in r.json()
+
+
+def test_sync_backup_too_large_400(client):
+    """payload 超 2MB → 400。"""
+    token = _register(client, "同步丙", "secret123").json()["token"]
+    big = "x" * (2 * 1024 * 1024 + 10)
+    r = client.post("/api/sync/backup", json={"payload": big}, headers=_auth(token))
+    assert r.status_code == 400
+
+
+def test_sync_backup_isolated_per_user(client):
+    """不同账号备份互相隔离。"""
+    t1 = _register(client, "同步丁", "secret123").json()["token"]
+    t2 = _register(client, "同步戊", "secret123").json()["token"]
+    client.post("/api/sync/backup", json={"payload": "data-1"}, headers=_auth(t1))
+    r = client.get("/api/sync/backup", headers=_auth(t2))
+    assert r.status_code == 404
+    assert client.get("/api/sync/backup", headers=_auth(t1)).json()["payload"] == "data-1"

@@ -129,7 +129,9 @@ export async function request(path, options = {}) {
   } catch (e) {
     /* 忽略解析失败 */
   }
-  throw new Error(`${msg}（${fn}）`);
+  const err = new Error(`${msg}（${fn}）`);
+  err.status = resp.status; // 附带状态码供调用方分支（如 404 视为"无数据"）
+  throw err;
 }
 
 /** 从后端拉取静态数据端点（供 buildAnalysis / analysisForHistory 组合，并行请求） */

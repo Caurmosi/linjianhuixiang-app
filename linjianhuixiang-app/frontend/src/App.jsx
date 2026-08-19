@@ -28,6 +28,8 @@ import SampleScreen from './screens/SampleScreen';
 import RegionScreen from './screens/RegionScreen';
 import LoginScreen from './screens/LoginScreen';
 import { isLoggedIn } from './services/authService';
+import { autoRestoreIfEmpty } from './services/syncService';
+import { loadHistory, loadRegions } from './utils/localStore';
 
 const SCREENS = {
   home: HomeScreen,
@@ -73,12 +75,28 @@ function Toast() {
 }
 
 function AppShell() {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   // v2 开屏登录门控：
   //  - 已登录（有 ljx_token）→ 主界面（离线可用）；
   //  - 未登录且未跳过（guest）→ 渲染 LoginScreen。
   //    登录成功（SET_USER）或游客跳过（SKIP_LOGIN）后自动进入主界面。
   const showLogin = !state.user && !state.guest && !isLoggedIn();
+
+  // v2 云同步：启动时若已登录且本地无数据（换机/卸载后），自动从账号恢复备份
+  useEffect(() => {
+    if (showLogin) return;
+    let alive = true;
+    (async () => {
+      const restored = await autoRestoreIfEmpty();
+      if (!alive || !restored) return;
+      // 恢复后把内存 state 与本地一致
+      dispatch({ type: 'SET_HISTORY', items: loadHistory() || [] });
+      dispatch({ type: 'SET_REGIONS', items: loadRegions() || [] });
+      dispatch({ type: 'TOAST', message: '已从云端恢复本地数据' });
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLogin]);
   return (
     <div className="app-bg min-h-screen w-full flex items-center justify-center py-4 sm:px-4">
       <div className="phone-frame">

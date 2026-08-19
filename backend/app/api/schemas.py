@@ -163,6 +163,23 @@ class ChangePasswordRequest(BaseModel):
     newPassword: str
 
 
+class BackupRequest(BaseModel):
+    """账号云同步：整体备份请求。payload 为前端本地数据序列化 JSON 字符串（≤2MB）。"""
+    payload: str
+
+
+class BackupResponse(BaseModel):
+    """账号云同步响应。"""
+    ok: bool
+    updatedAt: str
+
+
+class BackupGetResponse(BaseModel):
+    """GET /api/sync/backup 响应：本地数据备份快照。"""
+    payload: str
+    updatedAt: str
+
+
 # ---------------------------------------------------------------------------
 # 公共上传池
 # ---------------------------------------------------------------------------

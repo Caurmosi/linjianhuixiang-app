@@ -12,12 +12,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
+import QRCode from 'qrcode';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import BirdBookPanel from './panels/BirdBookPanel.jsx';
 import ComparePanel from './panels/ComparePanel.jsx';
 import ReportPanel from './panels/ReportPanel.jsx';
 import TrendPanel from './panels/TrendPanel.jsx';
+import Top10Panel from './panels/Top10Panel.jsx';
 
 /* ===================== 常量 ===================== */
 
@@ -450,6 +452,12 @@ export default function App() {
   const [trendTarget, setTrendTarget] = useState(null); // {regionName, clusterId}
   const [reportTarget, setReportTarget] = useState(null); // {regionName, clusterId}
 
+  // 分享 / 热门排行
+  const [showShare, setShowShare] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
+  const [showTop10, setShowTop10] = useState(false);
+
   // 地图状态
   const [unsupported, setUnsupported] = useState(false);
   const [mapError, setMapError] = useState(null);
@@ -815,6 +823,74 @@ export default function App() {
     })();
   }, []);
 
+  /* ---------- 分享（二维码）/ 热门排行 ---------- */
+
+  /** 打开分享弹窗：生成当前页面的二维码 */
+  const openShare = useCallback(async () => {
+    setShowShare(true);
+    setShareCopied(false);
+    try {
+      const dataUrl = await QRCode.toDataURL(window.location.href, {
+        width: 240,
+        margin: 1,
+        errorCorrectionLevel: 'M',
+      });
+      setQrDataUrl(dataUrl);
+    } catch (e) {
+      setQrDataUrl('');
+    }
+  }, []);
+
+  /** 复制当前链接（clipboard 优先，降级 execCommand） */
+  const copyShareLink = () => {
+    const url = window.location.href;
+    const done = () => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    };
+    const fallback = () => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        done();
+      } catch (e) {
+        /* 忽略 */
+      }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done).catch(fallback);
+    } else {
+      fallback();
+    }
+  };
+
+  /** Top10 点击 → 地图飞过去 + 重拉视野 */
+  const onPickTop = useCallback(
+    (place) => {
+      setShowTop10(false);
+      const map = mapRef.current;
+      if (map && mapLoadedRef.current) {
+        map.flyTo({ center: [place.lng, place.lat], zoom: 13, essential: true, duration: 1000 });
+        setTimeout(() => {
+          const b = mapRef.current && mapRef.current.getBounds();
+          if (b) {
+            loadClusters(
+              expandBbox({ minLng: b.getWest(), maxLng: b.getEast(), minLat: b.getSouth(), maxLat: b.getNorth() }),
+              { updateTotal: true }
+            );
+          }
+        }, 1200);
+      }
+    },
+    [loadClusters]
+  );
+
   /* ---------- 地图生命周期 ---------- */
 
   useEffect(() => {
@@ -1010,6 +1086,12 @@ export default function App() {
           </div>
         </div>
         <div className="ljx-header-user">
+          <button type="button" className="ljx-btn ljx-btn-ghost" onClick={openShare} title="生成二维码分享">
+            📱 分享
+          </button>
+          <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowTop10(true)}>
+            🏆 排行
+          </button>
           {user ? (
             <>
               <span className="ljx-header-username">{user.username}</span>
@@ -1306,6 +1388,40 @@ export default function App() {
           reportApi={reportApi}
           onClose={() => setReportTarget(null)}
         />
+      )}
+
+      {/* 热门地区 Top10 排行 */}
+      {showTop10 && (
+        <Top10Panel
+          filters={filters}
+          onPick={onPickTop}
+          onClose={() => setShowTop10(false)}
+        />
+      )}
+
+      {/* 二维码分享弹窗 */}
+      {showShare && (
+        <div className="ljx-modal" onClick={() => setShowShare(false)}>
+          <div className="ljx-modal-card ljx-share-card" onClick={(e) => e.stopPropagation()}>
+            <div className="ljx-modal-title">分享公共地图</div>
+            <div className="ljx-share-body">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="二维码" width={220} height={220} className="ljx-share-qr" />
+              ) : (
+                <div className="ljx-share-qr ljx-share-qr-empty">二维码生成中…</div>
+              )}
+              <p className="ljx-modal-hint">扫码即可打开公共地图（微信/相机/浏览器均可扫）</p>
+            </div>
+            <div className="ljx-modal-foot">
+              <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowShare(false)}>
+                关闭
+              </button>
+              <button type="button" className="ljx-btn" onClick={copyShareLink}>
+                {shareCopied ? '已复制 ✓' : '复制链接'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -87,6 +87,11 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_public_cluster_key ON public_records(cluster_key);
                 CREATE INDEX IF NOT EXISTS idx_public_user ON public_records(user_id);
                 CREATE INDEX IF NOT EXISTS idx_public_created_at ON public_records(created_at);
+                CREATE TABLE IF NOT EXISTS user_backups (
+                    user_id INTEGER PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             # 兼容旧库：history 表早期版本无 detail_json 列
@@ -294,6 +299,29 @@ class Database:
             )
             self._conn.commit()
             return cur.rowcount
+
+    # ---------------------------------------------------------------- 账号云同步（本地数据备份）
+    def save_backup(self, user_id: int, payload: str) -> str:
+        """整体备份该用户的本地数据（upsert）；返回 updated_at。"""
+        ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO user_backups (user_id, payload, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
+                (int(user_id), str(payload), ts),
+            )
+            self._conn.commit()
+            return ts
+
+    def load_backup(self, user_id: int) -> dict | None:
+        """读取该用户备份；无备份返回 None。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload, updated_at FROM user_backups WHERE user_id = ?", (int(user_id),)
+            ).fetchone()
+        if row is None:
+            return None
+        return {"payload": row["payload"], "updatedAt": row["updated_at"]}
 
     # ---------------------------------------------------------------- 公共上传池
     @staticmethod

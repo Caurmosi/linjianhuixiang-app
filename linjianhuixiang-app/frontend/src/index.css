@@ -2117,3 +2117,31 @@ input[type='range']::-moz-range-thumb {
   color: var(--ink-faint);
   flex: none;
 }
+
+/* 首页工具行：分享二维码 / 鸟种图鉴 */
+.home-tools {
+  display: flex;
+  gap: 10px;
+}
+.home-tool-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.home-tool-btn:active {
+  transform: scale(0.99);
+}
+.home-tool-ico {
+  font-size: 16px;
+}

@@ -12,6 +12,7 @@ import { useApp } from '../store/appStore.jsx';
 import Button from '../components/ui/Button';
 import { IconLeaf } from '../components/icons';
 import { login, register, setSession } from '../services/authService';
+import { uploadBackup } from '../services/syncService';
 import { humanizeBackendError } from '../utils/errorText';
 
 export default function LoginScreen() {
@@ -45,6 +46,8 @@ export default function LoginScreen() {
       setSession(token, name);
       dispatch({ type: 'SET_USER', username: name });
       dispatch({ type: 'TOAST', message: tab === 'register' ? '注册成功，已自动登录' : '登录成功' });
+      // 登录成功 → 静默把本地数据备份到账号（失败不打断登录）
+      uploadBackup().catch(() => {});
     } catch (err) {
       const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
       setError(reason || '操作失败，请重试');

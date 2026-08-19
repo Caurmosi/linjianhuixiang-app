@@ -12,7 +12,9 @@ import { exportReport } from '../utils/exportReport';
 import { getApiBase, getDataSource } from '../config/dataConfig.js';
 import { pingHealth } from '../data/repository';
 import { clearSession, changePassword, getSignAnonymous, getUsername, isLoggedIn, logout, setSignAnonymous } from '../services/authService';
-import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight, IconUser } from '../components/icons';
+import { applyBackupPayload, fetchBackup, hasLocalData, uploadBackup } from '../services/syncService';
+import { loadHistory, loadRegions } from '../utils/localStore';
+import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight, IconUser, IconClock, IconUpload } from '../components/icons';
 
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
@@ -101,6 +103,48 @@ export default function SettingsScreen() {
   /** 未登录 → 打开开屏登录（App 门控渲染 LoginScreen；登录成功后回到本页） */
   const onOpenLogin = () => {
     dispatch({ type: 'OPEN_LOGIN' });
+  };
+
+  // ---- 云同步（本地数据备份到账号） ----
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+
+  /** 立即把本地数据备份到账号 */
+  const onBackupNow = async () => {
+    setSyncBusy(true);
+    setSyncMsg('');
+    try {
+      const r = await uploadBackup();
+      setSyncMsg(`已备份到账号 ${username || ''}（${(r && r.updatedAt || '').slice(0, 16).replace('T', ' ') || '刚刚'}）`);
+      dispatch({ type: 'TOAST', message: '本地数据已备份到云端' });
+    } catch (err) {
+      setSyncMsg((err && err.message) || '备份失败，请稍后重试');
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  /** 从云端恢复：以云端备份整体覆盖本地（会先提示确认） */
+  const onRestoreNow = async () => {
+    if (!window.confirm('将用云端备份覆盖本机数据（本机现有数据会被替换），确定恢复吗？')) return;
+    setSyncBusy(true);
+    setSyncMsg('');
+    try {
+      const payload = await fetchBackup();
+      if (!payload) {
+        setSyncMsg('云端暂无备份（该账号还没备份过数据）');
+        return;
+      }
+      if (!applyBackupPayload(payload)) throw new Error('备份数据格式异常');
+      dispatch({ type: 'SET_HISTORY', items: loadHistory() || [] });
+      dispatch({ type: 'SET_REGIONS', items: loadRegions() || [] });
+      dispatch({ type: 'TOAST', message: '已从云端恢复本地数据' });
+      setSyncMsg('恢复完成');
+    } catch (err) {
+      setSyncMsg((err && err.message) || '恢复失败，请稍后重试');
+    } finally {
+      setSyncBusy(false);
+    }
   };
 
   // ---- 修改密码 ----
@@ -244,6 +288,30 @@ export default function SettingsScreen() {
                   : '上传时显示你的用户名；公共地图对外仅展示到天的日期，坐标为近似位置（已模糊数百米）。'}
               </p>
             </div>
+            {/* 云同步：本地数据备份到账号（换机/重装可恢复） */}
+            <div className="set-row" onClick={syncBusy ? undefined : onBackupNow} style={syncBusy ? { opacity: 0.6 } : undefined}>
+              <div className="ic">
+                <IconUpload size={18} />
+              </div>
+              <div className="t" style={{ flex: 1 }}>
+                <b>备份到云端</b>
+                <span>把本机分析/地区记录备份到当前账号（换机可恢复）</span>
+              </div>
+            </div>
+            <div className="set-row" onClick={syncBusy ? undefined : onRestoreNow} style={syncBusy ? { opacity: 0.6 } : undefined}>
+              <div className="ic">
+                <IconClock size={18} />
+              </div>
+              <div className="t" style={{ flex: 1 }}>
+                <b>从云端恢复</b>
+                <span>用账号备份覆盖本机数据（会先确认）</span>
+              </div>
+            </div>
+            {syncMsg && (
+              <p className="faint text-[11px] px-4 pb-2 leading-relaxed" style={{ color: syncMsg.includes('失败') ? '#c0392b' : undefined }}>
+                {syncMsg}
+              </p>
+            )}
           </>
         )}
       </div>

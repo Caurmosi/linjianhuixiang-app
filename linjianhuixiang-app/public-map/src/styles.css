@@ -878,3 +878,145 @@ body {
   border-left: 3px solid #cfe3d6;
   padding-left: 10px;
 }
+
+/* ===================== 热门 Top10 / 分享 / 移动端适配 ===================== */
+
+.ljx-top-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px 4px;
+}
+.ljx-top-tabs button {
+  flex: 1;
+  height: 30px;
+  border: 1px solid #cfd9d2;
+  border-radius: 8px;
+  background: #fff;
+  color: #5b7266;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ljx-top-tabs button.on {
+  background: #1b7a4b;
+  border-color: #1b7a4b;
+  color: #fff;
+}
+.ljx-top-err {
+  padding: 10px 16px 0;
+}
+.ljx-top-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ljx-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 8px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.ljx-top-row:hover { background: #f0f6f2; }
+.ljx-top-rank {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #eef2ef;
+  color: #5b7266;
+  font-size: 12px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.ljx-top-rank.hot {
+  background: #1b7a4b;
+  color: #fff;
+}
+.ljx-top-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #22332a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ljx-top-stat { font-size: 12px; color: #7a9186; flex: none; }
+.ljx-top-score { font-size: 15px; font-weight: 700; flex: none; }
+
+/* 分享弹窗 */
+.ljx-share-card { text-align: center; }
+.ljx-share-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.ljx-share-qr {
+  border: 1px solid #e6ece8;
+  border-radius: 12px;
+  background: #fff;
+}
+.ljx-share-qr-empty {
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-items: center;
+  color: #8aa096;
+  font-size: 13px;
+}
+
+/* ===================== 移动端适配 ===================== */
+@media (max-width: 700px) {
+  .ljx-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ljx-header-user {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .ljx-filterbar {
+    gap: 6px;
+  }
+  .ljx-input-search { flex-basis: 100%; }
+  .ljx-filter-group { flex: 1; }
+  .ljx-filter-group .ljx-input-score { flex: 1; }
+  .ljx-select { flex: 1; min-width: 0; }
+  .ljx-panel {
+    width: 100%;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    max-width: none;
+    border-radius: 0;
+  }
+  .ljx-candidates {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+  .ljx-modal {
+    padding: 12px;
+  }
+  .ljx-modal-card {
+    max-width: 100%;
+  }
+  .ljx-legend {
+    bottom: 8px;
+    left: 8px;
+    padding: 4px 8px;
+  }
+  .maplibregl-popup {
+    max-width: calc(100vw - 24px) !important;
+  }
+}

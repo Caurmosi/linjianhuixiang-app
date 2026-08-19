@@ -517,6 +517,36 @@ def me(authorization: str | None = Header(default=None)) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 账号云同步（本地数据整体备份到账号，换机登录可恢复）
+# ---------------------------------------------------------------------------
+_MAX_BACKUP_BYTES = 2 * 1024 * 1024  # 2MB
+
+
+@router.post("/api/sync/backup", response_model=schemas.BackupResponse, tags=["sync"])
+def upload_backup(
+    payload: schemas.BackupRequest,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """整体备份当前用户的本地数据（upsert 单行）。payload ≤2MB，超限 → 400。"""
+    user = deps.get_current_user(authorization)
+    size = len(payload.payload.encode("utf-8"))
+    if size > _MAX_BACKUP_BYTES:
+        raise ApiError(400, "备份数据过大", f"备份大小 {size // 1024}KB，上限 2MB")
+    updated_at = database.get_db().save_backup(user["id"], payload.payload)
+    return {"ok": True, "updatedAt": updated_at}
+
+
+@router.get("/api/sync/backup", response_model=schemas.BackupGetResponse, tags=["sync"])
+def fetch_backup(authorization: str | None = Header(default=None)) -> dict:
+    """读取当前用户的备份快照；无备份 → 404。"""
+    user = deps.get_current_user(authorization)
+    backup = database.get_db().load_backup(user["id"])
+    if backup is None:
+        raise ApiError(404, "暂无备份", "该账号还没有备份数据")
+    return backup
+
+
+# ---------------------------------------------------------------------------
 # 公共上传池（登录后可用）
 # ---------------------------------------------------------------------------
 def _geocode_first(region_name: str) -> tuple[float, float] | None:

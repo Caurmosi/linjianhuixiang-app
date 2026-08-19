@@ -2,12 +2,14 @@
  * HomeScreen.jsx
  * 首页：实时录音（主卡） / 导入环境录音（多选批量） / 历史记录 / 最近分析 / 一键演示（仅演示模式）
  */
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { useApp } from '../store/appStore.jsx';
 import { analysisForHistory, buildMockAnalysis } from '../data/repository';
 import { humanizeBackendError } from '../utils/errorText';
 import Button from '../components/ui/Button';
 import Chip from '../components/ui/Chip';
+import BirdBookModal from '../components/BirdBookModal';
 import { isMockMode } from '../config/dataConfig.js';
 import { IconLeaf, IconUpload, IconPlay, IconMic, IconClock, IconBird, IconChevronRight, IconInfo, IconMap } from '../components/icons';
 import { openExternal, PUBLIC_MAP_URL } from '../utils/openExternal.js';
@@ -15,6 +17,22 @@ import { openExternal, PUBLIC_MAP_URL } from '../utils/openExternal.js';
 export default function HomeScreen() {
   const { state, dispatch } = useApp();
   const fileRef = useRef(null);
+
+  // 鸟种图鉴 / 二维码分享
+  const [showBirds, setShowBirds] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [qrUrl, setQrUrl] = useState('');
+
+  /** 打开分享弹窗：生成公共地图网页的二维码 */
+  const openShare = async () => {
+    setShowShare(true);
+    try {
+      const url = await QRCode.toDataURL(PUBLIC_MAP_URL, { width: 200, margin: 1, errorCorrectionLevel: 'M' });
+      setQrUrl(url);
+    } catch (e) {
+      setQrUrl('');
+    }
+  };
 
   // 数据源模式：挂载时读取一次（重进页面即刷新）
   const mockMode = isMockMode();
@@ -129,6 +147,18 @@ export default function HomeScreen() {
         <IconChevronRight size={20} className="chev" />
       </div>
 
+      {/* 工具行：分享二维码 / 鸟种图鉴 */}
+      <div className="home-tools mb-3">
+        <button type="button" className="home-tool-btn" onClick={openShare}>
+          <span className="home-tool-ico">📱</span>
+          分享二维码
+        </button>
+        <button type="button" className="home-tool-btn" onClick={() => setShowBirds(true)}>
+          <span className="home-tool-ico">📖</span>
+          鸟种图鉴
+        </button>
+      </div>
+
       {/* 实时录音 —— 主卡片（UI 最大） */}
       <div className="record-card" onClick={onRecord}>
         <div className="up">
@@ -208,6 +238,45 @@ export default function HomeScreen() {
           鸟鸣是生物多样性的“声学指纹”。识别鸟种 + 量化声景 + 耦合人为噪声，即可诊断这片绿地“适不适合鸟住”，比人工调查更低成本、可重复。
         </p>
       </div>
+
+      {/* 鸟种图鉴弹层 */}
+      {showBirds && <BirdBookModal onClose={() => setShowBirds(false)} />}
+
+      {/* 二维码分享弹窗（扫码直达公共地图网页） */}
+      {showShare && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 95,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(15, 30, 22, 0.45)', padding: 20,
+          }}
+          onClick={() => setShowShare(false)}
+        >
+          <div
+            style={{
+              width: '100%', maxWidth: 300, background: '#fff', borderRadius: 16,
+              padding: 20, boxShadow: '0 16px 48px rgba(12,30,20,.28)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#22332a' }}>分享公共地图</div>
+            {qrUrl ? (
+              <img src={qrUrl} alt="二维码" width={200} height={200} style={{ borderRadius: 10, border: '1px solid #e6ece8' }} />
+            ) : (
+              <div style={{ width: 200, height: 200, display: 'grid', placeItems: 'center', color: '#8aa096', fontSize: 13 }}>
+                二维码生成中…
+              </div>
+            )}
+            <p style={{ fontSize: 12, color: '#7a9186', textAlign: 'center', lineHeight: 1.6, margin: 0 }}>
+              扫码打开公共地图网页，看看城市哪里最适合观鸟
+            </p>
+            <Button variant="primary" style={{ width: '100%' }} onClick={() => openExternal(PUBLIC_MAP_URL)}>
+              打开公共地图
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
