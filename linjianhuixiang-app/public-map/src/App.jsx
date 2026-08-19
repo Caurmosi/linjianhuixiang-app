@@ -14,6 +14,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+import BirdBookPanel from './panels/BirdBookPanel.jsx';
+import ComparePanel from './panels/ComparePanel.jsx';
+import ReportPanel from './panels/ReportPanel.jsx';
+import TrendPanel from './panels/TrendPanel.jsx';
+
 /* ===================== 常量 ===================== */
 
 const API_BASE = (import.meta.env.VITE_API_BASE || 'https://uegbddmczvrm.cloud.sealos.io').replace(/\/+$/, '');
@@ -275,6 +280,35 @@ async function fetchClusterDetail(id) {
   return data;
 }
 
+/** 多地区对比：ids 为 cluster_key 数组（≤4，各自 URL 编码后逗号连接） */
+async function compareApi(ids) {
+  const q = ids.map((id) => encodeURIComponent(id)).join(',');
+  const res = await fetch(`${API_BASE}/api/public/compare?ids=${q}`);
+  if (!res.ok) {
+    const d = await res.json().catch(() => null);
+    const e = new Error((d && d.error) || `HTTP ${res.status}`);
+    e.error = d && d.error;
+    e.status = res.status;
+    throw e;
+  }
+  const d = await res.json();
+  if (!d || !Array.isArray(d.items)) throw new Error('响应格式错误');
+  return d;
+}
+
+/** 地区生态简报（匿名只读） */
+async function reportApi(id) {
+  const res = await fetch(`${API_BASE}/api/public/clusters/${encodeURIComponent(id)}/report`);
+  if (!res.ok) {
+    const d = await res.json().catch(() => null);
+    const e = new Error((d && d.error) || `HTTP ${res.status}`);
+    e.error = d && d.error;
+    e.status = res.status;
+    throw e;
+  }
+  return res.json();
+}
+
 /** 世界范围 bbox（首屏取全局 total 用） */
 function worldBbox() {
   return { minLng: -180, maxLng: 180, minLat: -85, maxLat: 85 };
@@ -366,6 +400,10 @@ function buildPopupHTML(p, samples, loading, errorMsg, myIds) {
       <div class="ljx-popup-meta-item"><span>日期范围</span><b>${from} ~ ${to}</b></div>
     </div>
     ${samplesHtml}
+    <div class="ljx-popup-actions">
+      <button type="button" class="ljx-popup-action" data-action="trend">📈 评分趋势</button>
+      <button type="button" class="ljx-popup-action" data-action="report">📄 生态简报</button>
+    </div>
     <div class="ljx-popup-note">坐标为近似位置（已模糊数百米）</div>
   </div>`;
 }
@@ -405,6 +443,12 @@ export default function App() {
   const [delErr, setDelErr] = useState('');
   const [delBusy, setDelBusy] = useState(false);
   const [toastMsg, setToastMsg] = useState(null); // 顶部轻提示
+
+  // 分析功能面板（图鉴 / 对比 / 趋势 / 生态简报）
+  const [showBirds, setShowBirds] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
+  const [trendTarget, setTrendTarget] = useState(null); // {regionName, clusterId}
+  const [reportTarget, setReportTarget] = useState(null); // {regionName, clusterId}
 
   // 地图状态
   const [unsupported, setUnsupported] = useState(false);
@@ -508,13 +552,21 @@ export default function App() {
       .addTo(map);
     activePopupRef.current = popup;
 
-    // 删除按钮事件委托：点击 .ljx-del-btn → 打开删除确认
+    // 删除按钮事件委托：点击 .ljx-del-btn → 打开删除确认；点击 .ljx-popup-action → 趋势/简报
     const onPopupClick = (ev) => {
       const btn = ev.target && ev.target.closest ? ev.target.closest('.ljx-del-btn') : null;
-      if (!btn) return;
-      const id = Number(btn.getAttribute('data-sample-id'));
-      if (Number.isFinite(id) && id > 0) {
-        setDelTarget({ id, regionName: p.regionName || '' });
+      if (btn) {
+        const id = Number(btn.getAttribute('data-sample-id'));
+        if (Number.isFinite(id) && id > 0) {
+          setDelTarget({ id, regionName: p.regionName || '' });
+        }
+        return;
+      }
+      const actionBtn = ev.target && ev.target.closest ? ev.target.closest('.ljx-popup-action') : null;
+      if (actionBtn) {
+        const act = actionBtn.getAttribute('data-action');
+        if (act === 'trend') setTrendTarget({ regionName: p.regionName || '', clusterId: p.id });
+        else if (act === 'report') setReportTarget({ regionName: p.regionName || '', clusterId: p.id });
       }
     };
     popup.getElement().addEventListener('click', onPopupClick);
@@ -1021,6 +1073,13 @@ export default function App() {
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={clearFilters}>
           清除
         </button>
+        <span className="ljx-filter-sep" />
+        <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowCompare(true)}>
+          📊 多地区对比
+        </button>
+        <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowBirds(true)}>
+          📖 鸟种图鉴
+        </button>
       </div>
 
       {/* 同名歧义候选（如「西湖」可能命中台湾西湖乡，用户自选最稳） */}
@@ -1219,6 +1278,34 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 鸟种图鉴面板 */}
+      {showBirds && <BirdBookPanel onClose={() => setShowBirds(false)} />}
+
+      {/* 多地区对比面板 */}
+      {showCompare && (
+        <ComparePanel clusters={clusters} compareApi={compareApi} onClose={() => setShowCompare(false)} />
+      )}
+
+      {/* 地区评分趋势面板 */}
+      {trendTarget && (
+        <TrendPanel
+          regionName={trendTarget.regionName}
+          clusterId={trendTarget.clusterId}
+          fetchDetail={fetchClusterDetail}
+          onClose={() => setTrendTarget(null)}
+        />
+      )}
+
+      {/* 地区生态简报面板 */}
+      {reportTarget && (
+        <ReportPanel
+          regionName={reportTarget.regionName}
+          clusterId={reportTarget.clusterId}
+          reportApi={reportApi}
+          onClose={() => setReportTarget(null)}
+        />
       )}
     </div>
   );

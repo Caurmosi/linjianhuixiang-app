@@ -88,3 +88,68 @@ def aggregate_clusters(rows: Iterable[dict]) -> list[dict]:
             }
         )
     return clusters
+
+
+# ---------------------------------------------------------------------------
+# 分析辅助：噪声 / 物种统计 / 趋势序列（供 对比、趋势图、生态简报 使用）
+# ---------------------------------------------------------------------------
+
+
+def noise_of(row: dict) -> float | None:
+    """从行内 summary.livability.noise 取噪声占比（0-100）；缺失返回 None。"""
+    try:
+        val = (row.get("summary") or {}).get("livability", {}).get("noise")
+        if val is None:
+            return None
+        return round(float(val), 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def noise_avg(rows: Iterable[dict]) -> float | None:
+    """噪声占比均值；全部缺失返回 None。"""
+    vals = [v for v in (noise_of(r) for r in rows) if v is not None]
+    if not vals:
+        return None
+    return round(sum(vals) / len(vals), 1)
+
+
+def species_counts(rows: Iterable[dict], top: int = 6) -> list[dict]:
+    """汇总物种出现次数（跨样本），按次数降序取 top。
+
+    summary.species 结构：[{name, conf, ...}, ...]。缺失/空返回 []。
+    输出：[{name, count}]。
+    """
+    counter: dict[str, int] = {}
+    for row in rows:
+        sp = (row.get("summary") or {}).get("species")
+        if not isinstance(sp, list):
+            continue
+        for item in sp:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if not name or name.lower() in ("unknown", "未识别"):
+                continue
+            counter[name] = counter.get(name, 0) + 1
+    ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{"name": name, "count": count} for name, count in ranked[:top]]
+
+
+def build_trend(rows: Iterable[dict]) -> list[dict]:
+    """按时间排序的趋势序列（供折线图）。
+
+    每点：{date(YYYY-MM-DD), score, confidence, noise}，noise 缺失为 None。
+    """
+    items = []
+    for r in rows:
+        items.append(
+            {
+                "date": str(r["created_at"])[:10],
+                "score": float(r["score"]),
+                "confidence": float(r["confidence"]),
+                "noise": noise_of(r),
+            }
+        )
+    items.sort(key=lambda p: (p["date"], p.get("score", 0)))
+    return items

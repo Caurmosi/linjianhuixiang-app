@@ -224,6 +224,7 @@ class ClusterSample(BaseModel):
     """聚合点样本：昵称/匿名 + 日期（到天）+ 评分（不返回任何坐标）。
 
     id 供「我的记录」识别（删除需登录且本人校验，返回 id 无越权风险）。
+    noise 为样本噪声占比（summary.livability.noise，缺失为 None），供趋势/对比分析。
     """
     id: int
     nickname: str
@@ -231,12 +232,53 @@ class ClusterSample(BaseModel):
     date: str
     score: int
     confidence: float
+    noise: float | None = None
+
+
+class TrendPoint(BaseModel):
+    """趋势折线数据点（按时间升序）。"""
+    date: str
+    score: float
+    confidence: float
+    noise: float | None = None
 
 
 class ClusterDetailResponse(BaseModel):
-    """GET /api/public/clusters/{cluster_key} 响应。"""
+    """GET /api/public/clusters/{cluster_key} 响应：簇聚合 + 样本 + 趋势序列。"""
     cluster: ClusterItem
     samples: list[ClusterSample]
+    trend: list[TrendPoint] = []
+
+
+class SpeciesCount(BaseModel):
+    """物种出现统计。"""
+    name: str
+    count: int
+
+
+class CompareItem(BaseModel):
+    """多地区对比单项。"""
+    id: str
+    regionName: str
+    score: float
+    scoreMin: int
+    scoreMax: int
+    noiseAvg: float | None = None
+    confidenceAvg: float
+    n: int
+    speciesTop: list[SpeciesCount] = []
+
+
+class CompareResponse(BaseModel):
+    """GET /api/public/compare 响应。"""
+    items: list[CompareItem]
+
+
+class ReportResponse(BaseModel):
+    """GET /api/public/clusters/{cluster_key}/report 响应：生态简报。"""
+    regionName: str
+    source: str  # "llm" | "template"
+    report: str  # Markdown 文本
 
 
 class MyPublicRecord(BaseModel):

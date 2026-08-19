@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Bar from '../components/ui/Bar';
+import BirdBookModal from '../components/BirdBookModal';
 import { IconBird, IconInfo } from '../components/icons';
 
 const PERIODS = ['全部', '清晨', '上午', '黄昏', '全天'];
@@ -14,6 +15,7 @@ const PERIODS = ['全部', '清晨', '上午', '黄昏', '全天'];
 export default function SpeciesScreen() {
   const { state, dispatch } = useApp();
   const [period, setPeriod] = useState('全部');
+  const [book, setBook] = useState(null); // {name} | null —— 鸟种图鉴弹层
   const { species } = state.analysis;
   const threshold = state.threshold;
 
@@ -26,7 +28,12 @@ export default function SpeciesScreen() {
       <AppBar
         title="物种清单"
         onBack={() => dispatch({ type: 'BACK' })}
-        right={<span className="chip">阈值 {threshold.toFixed(2)}</span>}
+        right={
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="chip">阈值 {threshold.toFixed(2)}</span>
+            <button className="chip" onClick={() => setBook({ name: null })}>图鉴</button>
+          </div>
+        }
       />
 
       {/* 时段筛选 */}
@@ -53,7 +60,7 @@ export default function SpeciesScreen() {
       ) : (
         list.map((s) => (
           <div className="sp-row" key={s.id}>
-            <div className="name">
+            <div className="name" onClick={() => setBook({ name: s.name })} style={{ cursor: 'pointer' }}>
               <div className="avatar">
                 <IconBird size={18} />
               </div>
@@ -76,6 +83,8 @@ export default function SpeciesScreen() {
         <IconInfo size={14} />
         已按 {threshold.toFixed(2)} 阈值去重，显示 {list.length} / {shown.length} 种，相对多样性评估，非绝对计数
       </div>
+
+      {book && <BirdBookModal initialName={book.name} onClose={() => setBook(null)} />}
     </div>
   );
 }

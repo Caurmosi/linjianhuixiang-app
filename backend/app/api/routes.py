@@ -31,6 +31,7 @@ from .. import config
 from ..core import audio, birdnet, dsp, indices as indices_mod, livability as livability_mod
 from ..core import noise as noise_mod
 from ..core import baseline, synthesis
+from ..core import eco_report
 from ..core import privacy as privacy_mod
 from ..db import database
 from . import deps, schemas
@@ -659,7 +660,7 @@ def get_public_clusters(
 def get_public_cluster_detail(
     cluster_key: str,
 ) -> dict:
-    """聚合点详情（匿名只读）：簇聚合 + 样本（匿名/昵称 + 日期 + 评分，不返回坐标）。"""
+    """聚合点详情（匿名只读）：簇聚合 + 样本（昵称/日期/评分/噪声）+ 趋势序列（不返回坐标）。"""
     rows = database.get_db().list_public_records()
     matched = [r for r in rows if r["cluster_key"] == cluster_key]
     if not matched:
@@ -673,10 +674,72 @@ def get_public_cluster_detail(
             "date": str(r["created_at"])[:10],
             "score": r["score"],
             "confidence": r["confidence"],
+            "noise": privacy_mod.noise_of(r),
         }
         for r in matched
     ]
-    return {"cluster": cluster, "samples": samples}
+    trend = privacy_mod.build_trend(matched)
+    return {"cluster": cluster, "samples": samples, "trend": trend}
+
+
+@router.get("/api/public/compare", response_model=schemas.CompareResponse, tags=["public"])
+def compare_public_clusters(
+    ids: str | None = Query(default=None, description="逗号分隔的 cluster_key 列表，最多 4 个（每个需 URL 编码）"),
+) -> dict:
+    """多地区对比（匿名只读）：给定多个聚合点 id，返回每簇评分/噪声/置信度/样本数/物种 Top。"""
+    if not ids or not ids.strip():
+        raise ApiError(400, "缺少 ids", "请提供至少一个聚合点 id")
+    keys = [k.strip() for k in ids.split(",") if k.strip()]
+    if len(keys) > 4:
+        raise ApiError(400, "最多对比 4 个地区", f"收到 {len(keys)} 个，上限 4")
+    rows = database.get_db().list_public_records()
+    items = []
+    for key in keys:
+        matched = [r for r in rows if r["cluster_key"] == key]
+        if not matched:
+            continue
+        c = privacy_mod.aggregate_clusters(matched)[0]
+        items.append(
+            {
+                "id": key,
+                "regionName": c["regionName"],
+                "score": c["score"],
+                "scoreMin": c["scoreMin"],
+                "scoreMax": c["scoreMax"],
+                "noiseAvg": privacy_mod.noise_avg(matched),
+                "confidenceAvg": c["confidenceAvg"],
+                "n": c["n"],
+                "speciesTop": privacy_mod.species_counts(matched),
+            }
+        )
+    if not items:
+        raise ApiError(404, "聚合点不存在", "提供的 id 均无数据")
+    return {"items": items}
+
+
+@router.get("/api/public/clusters/{cluster_key}/report", response_model=schemas.ReportResponse, tags=["public"])
+def get_cluster_eco_report(
+    cluster_key: str,
+) -> dict:
+    """地区生态简报（匿名只读）：聚合数据 → 大模型（LLM_API_KEY）或规则模板生成 Markdown。"""
+    rows = database.get_db().list_public_records()
+    matched = [r for r in rows if r["cluster_key"] == cluster_key]
+    if not matched:
+        raise ApiError(404, "聚合点不存在", f"cluster_key={cluster_key} 不存在")
+    cluster = privacy_mod.aggregate_clusters(matched)[0]
+    data = {
+        "regionName": cluster["regionName"],
+        "n": cluster["n"],
+        "score": cluster["score"],
+        "scoreMin": cluster["scoreMin"],
+        "scoreMax": cluster["scoreMax"],
+        "confidenceAvg": cluster["confidenceAvg"],
+        "noiseAvg": privacy_mod.noise_avg(matched),
+        "speciesTop": privacy_mod.species_counts(matched),
+        "trend": privacy_mod.build_trend(matched),
+    }
+    report, source = eco_report.generate_eco_report(data)
+    return {"regionName": cluster["regionName"], "source": source, "report": report}
 
 
 @router.get("/api/public/me", response_model=schemas.MyPublicRecordsResponse, tags=["public"])

@@ -322,3 +322,80 @@ def test_cluster_detail_samples_have_id(client):
     d = client.get(f"/api/public/clusters/{cid}").json()
     assert len(d["samples"]) >= 1
     assert isinstance(d["samples"][0]["id"], int)
+
+
+# ---------------------------------------------------------------------------
+# 趋势 / 多地区对比 / 生态简报
+# ---------------------------------------------------------------------------
+def _seed_cluster(client, username: str, region: str, lat: float, lng: float, scores: list[int]):
+    """注册用户并对同一地区上传多条记录，返回第一条的 cluster_key。
+
+    注意：本文件 _register 返回 token 字符串，_upload 返回响应 JSON dict。
+    """
+    token = _register(client, username, "secret123")
+    cid = None
+    for s in scores:
+        r = _upload(client, token, regionName=region, lat=lat, lng=lng, score=s, confidence=0.8)
+        cid = r.get("clusterKey") or cid
+    return cid, token
+
+
+def test_cluster_detail_has_trend_and_noise(client):
+    """详情含 trend（时间升序）且样本带 noise。"""
+    cid, _ = _seed_cluster(client, "趋势甲", "趋势公园", 30.2, 120.1, [60, 72, 68])
+    d = client.get(f"/api/public/clusters/{cid}").json()
+    assert len(d["trend"]) == 3
+    dates = [p["date"] for p in d["trend"]]
+    assert dates == sorted(dates), "trend 应按时间升序"
+    assert all("score" in p and "confidence" in p for p in d["trend"])
+    # 样本带 noise 字段（summary 缺失时 None，不报错）
+    for s in d["samples"]:
+        assert "noise" in s
+
+
+def test_compare_clusters(client):
+    """多地区对比：返回各簇评分/噪声/样本数/物种。"""
+    cid1, _ = _seed_cluster(client, "对比甲", "对比公园A", 30.21, 120.11, [60, 80])
+    cid2, _ = _seed_cluster(client, "对比乙", "对比公园B", 30.22, 120.12, [45])
+    # 注意：不手动 quote——TestClient/httpx 会对 params 自动 URL 编码（手动 quote 会二次编码导致 404）
+    r = client.get("/api/public/compare", params={"ids": cid1 + "," + cid2})
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 2
+    by_name = {it["regionName"]: it for it in items}
+    a = by_name["对比公园A"]
+    assert a["n"] == 2 and a["score"] == 70.0
+    assert "noiseAvg" in a and "speciesTop" in a
+
+
+def test_compare_requires_ids(client):
+    """compare 缺 ids → 400；超过 4 个 → 400。"""
+    assert client.get("/api/public/compare").status_code == 400
+    assert client.get("/api/public/compare", params={"ids": "a,b,c,d,e"}).status_code == 400
+
+
+def test_eco_report_template_fallback(client, monkeypatch):
+    """无 LLM key → 模板简报（含地区名与评分信息）。"""
+    import app.core.eco_report as eco_report_mod
+    monkeypatch.setattr(eco_report_mod, "LLM_API_KEY", "")
+    cid, _ = _seed_cluster(client, "报告甲", "报告公园", 30.23, 120.13, [55, 65])
+    r = client.get(f"/api/public/clusters/{cid}/report")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["source"] == "template"
+    assert body["regionName"] == "报告公园"
+    assert "报告公园" in body["report"]
+    assert "宜居度" in body["report"]
+
+
+def test_eco_report_llm_failure_fallback(client, monkeypatch):
+    """LLM 调用失败（接口 500）→ 降级模板，不报错。"""
+    import app.core.eco_report as eco_report_mod
+    monkeypatch.setattr(eco_report_mod, "LLM_API_KEY", "fake-key")
+    def _boom(*a, **k):
+        raise RuntimeError("upstream down")
+    monkeypatch.setattr(eco_report_mod.requests, "post", _boom)
+    cid, _ = _seed_cluster(client, "报告乙", "报告湖", 30.24, 120.14, [70])
+    r = client.get(f"/api/public/clusters/{cid}/report")
+    assert r.status_code == 200
+    assert r.json()["source"] == "template"
