@@ -27,8 +27,7 @@ test('initialState: 关键初始值正确', () => {
   assert.equal(initialState.toast, null);
   assert.equal(initialState.analysisOverrides, null);
   assert.equal(initialState.history.length, 3);
-  assert.equal(initialState.analysis.species.length, 9);
-  assert.equal(initialState.analysis.livability.score, 68);
+  assert.equal(initialState.analysis, null); // 安装后无默认结果
 });
 
 test('SET_THRESHOLD: 更新阈值且不改变其他字段（不可变性）', () => {

@@ -27,6 +27,7 @@ import HistoryScreen from './screens/HistoryScreen';
 import SampleScreen from './screens/SampleScreen';
 import RegionScreen from './screens/RegionScreen';
 import LoginScreen from './screens/LoginScreen';
+import GuideScreen from './screens/GuideScreen';
 import { isLoggedIn } from './services/authService';
 import { autoRestoreIfEmpty } from './services/syncService';
 import { loadHistory, loadRegions } from './utils/localStore';
@@ -45,6 +46,7 @@ const SCREENS = {
   history: HistoryScreen,
   sample: SampleScreen,
   region: RegionScreen,
+  guide: GuideScreen,
 };
 
 function ActiveScreen() {

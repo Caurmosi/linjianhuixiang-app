@@ -13,6 +13,14 @@ import { IconStar } from '../components/icons';
 export default function LivabilityScreen() {
   const { state, dispatch } = useApp();
   const a = state.analysis;
+  if (!a || !a.livability) {
+    return (
+      <div>
+        <AppBar title="鸟类宜居度" onBack={() => dispatch({ type: 'BACK' })} />
+        <div className="py-14 text-center text-[13px] text-ink-soft">暂无分析数据，请先完成一次录音分析</div>
+      </div>
+    );
+  }
   const { score, bio, sound, noise } = a.livability;
   const g = gradeOf(score);
 

@@ -49,8 +49,10 @@ export default function MapScreen() {
   const [confirmRegionId, setConfirmRegionId] = useState(null);
   // 录音分布：已有简化固定地图时锁定视图，「重新调整」→ MapPicker 编辑态
   const [editingMap, setEditingMap] = useState(false);
-  const a = state.analysis;
+  const a = state.analysis || {};
   const summary = state.batchSummary;
+  // 空热力图兜底（4×12 零矩阵）：未分析时「时间热力图」不崩溃
+  const heatmap = Array.isArray(a.heatmap) && a.heatmap.length ? a.heatmap : Array.from({ length: 4 }, () => Array(12).fill(0));
 
   const loadRegions = async () => {
     try {
@@ -291,8 +293,8 @@ export default function MapScreen() {
 
       <div className="heat-wrap">
         <h4>本次录音 时段 × 频段</h4>
-        <div className="cap">真实时频能量 · {a.recording || '中山公园_晨.wav'}</div>
-        <HeatmapChart data={a.heatmap} />
+        <div className="cap">真实时频能量 · {a.recording || '未命名录音'}</div>
+        <HeatmapChart data={heatmap} />
         <div className="legend">
           <span>弱</span>
           <span className="scale" />

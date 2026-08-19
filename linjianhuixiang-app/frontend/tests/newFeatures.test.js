@@ -31,10 +31,9 @@ describe('HomeScreen.jsx：首页重构（需求 A）', () => {
     assert.match(home, /\{mockMode\s*\?[\s\S]*一键演示（内置样例）[\s\S]*:\s*null\s*\}/, '演示按钮应仅 mockMode 时渲染');
   });
 
-  test('「演示模式/真实识别」徽标保留', () => {
-    assert.match(home, /演示模式/);
-    assert.match(home, /真实识别/);
-    assert.match(home, /Chip tone=\{mockMode \? 'mid' : 'good'\}/);
+  test('数据源模式徽标已移除（用户要求首页更简洁，不再显示「真实识别/演示模式」提示）', () => {
+    assert.ok(!home.includes("Chip tone={mockMode"), '首页不应再有模式徽标结构');
+    assert.ok(!home.includes("'真实识别'"), '首页不应再渲染「真实识别」徽标文本');
   });
 
   test('实时录音为主卡：点击进入 record 屏幕（GO）', () => {

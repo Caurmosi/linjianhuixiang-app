@@ -16,7 +16,7 @@ export default function SpeciesScreen() {
   const { state, dispatch } = useApp();
   const [period, setPeriod] = useState('全部');
   const [book, setBook] = useState(null); // {name} | null —— 鸟种图鉴弹层
-  const { species } = state.analysis;
+  const species = (state.analysis && Array.isArray(state.analysis.species)) ? state.analysis.species : [];
   const threshold = state.threshold;
 
   const shown = species.filter((s) => s.conf >= threshold);

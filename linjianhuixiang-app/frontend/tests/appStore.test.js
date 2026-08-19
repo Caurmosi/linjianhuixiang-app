@@ -61,10 +61,8 @@ describe('initialState 初始状态', () => {
     assert.equal(initialState.toast, null);
   });
 
-  test('默认 analysis 由 buildAnalysis 构建且 speciesCount=9', () => {
-    assert.ok(initialState.analysis);
-    assert.equal(initialState.analysis.speciesCount, 9);
-    assert.equal(initialState.analysis.recording, '中山公园_晨.wav');
+  test('默认 analysis 为 null（安装后无默认结果，需录音/导入后产生）', () => {
+    assert.equal(initialState.analysis, null);
   });
 });
 

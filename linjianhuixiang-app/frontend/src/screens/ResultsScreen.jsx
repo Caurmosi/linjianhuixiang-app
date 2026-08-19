@@ -17,6 +17,32 @@ const CONF_TONE = { '高': 'good', '中': 'mid', '低': 'bad' };
 export default function ResultsScreen() {
   const { state, dispatch } = useApp();
   const a = state.analysis;
+
+  // 空态：安装后/未分析时「结果」页显示引导（不再出现默认假结果）
+  if (!a || !a.livability || typeof a.livability.score !== 'number') {
+    return (
+      <div>
+        <AppBar title="分析结果" onBack={() => dispatch({ type: 'BACK' })} />
+        <div className="py-16 text-center px-6">
+          <div className="text-[46px] mb-3">🎙️</div>
+          <p className="text-[15px] font-bold text-ink">还没有分析结果</p>
+          <p className="text-[12px] text-ink-soft mt-2 leading-relaxed">
+            去首页「实时录音」长按录制，或「导入环境录音」选择一段音频，
+            <br />
+            识别完成后结果会显示在这里。
+          </p>
+          <button
+            className="mt-5 px-6 py-2.5 rounded-xl text-white text-[14px] font-bold"
+            style={{ background: '#1b7a4b' }}
+            onClick={() => dispatch({ type: 'GO', screen: 'home' })}
+          >
+            去录音
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const score = a.livability.score;
   const g = gradeOf(score);
   const desc = livabilityDesc(a);

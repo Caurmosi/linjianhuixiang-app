@@ -17,7 +17,7 @@
  *  - 登录态：user（{username}|null）+ guest（游客跳过），由 App 门控渲染 LoginScreen。
  */
 import { createContext, useContext, useEffect, useReducer } from 'react';
-import { buildMockAnalysis, getHistory, isMockMode, migrateCloudData } from '../data/repository';
+import { getHistory, isMockMode, migrateCloudData } from '../data/repository';
 import { loadHistory, loadRegions, saveBatches, saveHistory, saveRegions } from '../utils/localStore';
 import { getUsername, isLoggedIn } from '../services/authService';
 
@@ -28,8 +28,8 @@ const initialState = {
   tab: 'home', // home | results | map | me
   screenStack: [], // 子页面返回栈
   recording: '中山公园_晨.wav',
-  // 初始化用纯本地 mock 生成（绝不发网络请求，后端不可达也能 1s 内出 UI）
-  analysis: buildMockAnalysis('中山公园_晨.wav', { speciesCount: 9, livability: { score: 68, noise: 34, bio: 76, sound: 60 } }),
+  // 初始化无分析结果（null）：安装后「结果」页为空态引导，需录音/导入后才产生数据
+  analysis: null,
   analysisOverrides: null, // START_ANALYSIS 携带的 mock 分析覆盖项（样例 / 实时录音使用）
   audioFile: null, // START_ANALYSIS 携带的待上传音频 File/Blob（首页选文件 → 真实识别用）
   // 批量分析队列（B）：待分析 [{name, file, overrides}] / 当前项下标 / 已出结果 / 是否批量模式 / 聚合综合摘要

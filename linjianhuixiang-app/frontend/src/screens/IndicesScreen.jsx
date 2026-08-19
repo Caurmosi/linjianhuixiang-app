@@ -9,12 +9,15 @@ import { IconInfo } from '../components/icons';
 
 export default function IndicesScreen() {
   const { state, dispatch } = useApp();
-  const indices = state.analysis.indices;
+  const indices = (state.analysis && Array.isArray(state.analysis.indices)) ? state.analysis.indices : [];
 
   return (
     <div>
       <AppBar title="声学指数" onBack={() => dispatch({ type: 'BACK' })} />
 
+      {indices.length === 0 && (
+        <div className="py-14 text-center text-[13px] text-ink-soft">暂无指数数据，请先完成一次录音分析</div>
+      )}
       {indices.map((idx) => (
         <div key={idx.key} className="card idx-card plain">
           <div className="top">

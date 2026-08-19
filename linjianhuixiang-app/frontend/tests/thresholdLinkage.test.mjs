@@ -87,14 +87,28 @@ test('与时段筛选组合：阈值 0.50 + 时段“清晨”只统计已显示
   }
 });
 
-test('store 联动：SET_THRESHOLD 0.90 后，应用 SpeciesScreen 谓词于 state.analysis.species → 显示 1 个', () => {
-  const s1 = reducer(initialState, { type: 'SET_THRESHOLD', value: 0.9 });
+test('store 联动：SET_THRESHOLD 0.90 后，应用 SpeciesScreen 谓词于 analysis.species → 显示 1 个', () => {
+  // 初始 analysis 为 null（安装后无默认结果），用带物种的数据模拟分析完成后的状态
+  const withAnalysis = reducer(initialState, {
+    type: 'COMPLETE_ANALYSIS',
+    analysis: {
+      recording: '测试录音.wav',
+      species: [
+        { id: 1, name: '麻雀', latin: 'Passer montanus', conf: 0.95, freq: 3, period: '清晨' },
+        { id: 2, name: '白头鹎', latin: 'Pycnonotus sinensis', conf: 0.55, freq: 2, period: '上午' },
+        { id: 3, name: '乌鸫', latin: 'Turdus merula', conf: 0.3, freq: 1, period: '黄昏' },
+      ],
+    },
+  });
+  assert.ok(withAnalysis.analysis && withAnalysis.analysis.species, 'COMPLETE_ANALYSIS 后应有 species');
+
+  const s1 = reducer(withAnalysis, { type: 'SET_THRESHOLD', value: 0.9 });
   assert.equal(s1.threshold, 0.9);
   assert.equal(shownAt(s1.analysis.species, s1.threshold).length, 1);
 
   const s2 = reducer(s1, { type: 'SET_THRESHOLD', value: 0.3 });
   assert.equal(s2.threshold, 0.3);
-  assert.equal(shownAt(s2.analysis.species, s2.threshold).length, 9);
+  assert.equal(shownAt(s2.analysis.species, s2.threshold).length, 3);
 });
 
 test('store 联动：SET_THRESHOLD 不影响 analysis 数据本身（仅阈值变化）', () => {
@@ -119,17 +133,26 @@ test('空数据容错：空 species 数组下过滤不抛错且显示 0 个', ()
   assert.equal(shownAt([], 0.5).length, 0);
 });
 
-test('store 联动完整性：分析结果中 species 与 SPECIES 一致，阈值联动对演示数据自洽', () => {
-  const a = initialState.analysis;
-  assert.equal(a.species.length, SPECIES.length);
-  for (let i = 0; i < SPECIES.length; i++) {
-    assert.equal(a.species[i].conf, SPECIES[i].conf);
-  }
+test('store 联动完整性：分析完成后 species 可被阈值联动过滤', () => {
+  // 初始 analysis 为 null；用 COMPLETE_ANALYSIS 注入一次分析结果
+  const withAnalysis = reducer(initialState, {
+    type: 'COMPLETE_ANALYSIS',
+    analysis: {
+      recording: '联动测试.wav',
+      species: [
+        { id: 1, name: '麻雀', latin: 'Passer montanus', conf: 0.95, freq: 3, period: '清晨' },
+        { id: 2, name: '白头鹎', latin: 'Pycnonotus sinensis', conf: 0.55, freq: 2, period: '上午' },
+        { id: 3, name: '乌鸫', latin: 'Turdus merula', conf: 0.3, freq: 1, period: '黄昏' },
+      ],
+    },
+  });
+  const a = withAnalysis.analysis;
+  assert.equal(a.species.length, 3);
   // 模拟完整用户路径：设置 → 物种清单
-  const withThreshold = reducer(initialState, { type: 'SET_THRESHOLD', value: 0.5 });
-  assert.equal(shownAt(withThreshold.analysis.species, withThreshold.threshold).length, 7);
+  const withThreshold = reducer(withAnalysis, { type: 'SET_THRESHOLD', value: 0.5 });
+  assert.equal(shownAt(withThreshold.analysis.species, withThreshold.threshold).length, 2);
   const strict = reducer(withThreshold, { type: 'SET_THRESHOLD', value: 0.9 });
   assert.equal(shownAt(strict.analysis.species, strict.threshold).length, 1);
   const loose = reducer(strict, { type: 'SET_THRESHOLD', value: 0.3 });
-  assert.equal(shownAt(loose.analysis.species, loose.threshold).length, 9);
+  assert.equal(shownAt(loose.analysis.species, loose.threshold).length, 3);
 });

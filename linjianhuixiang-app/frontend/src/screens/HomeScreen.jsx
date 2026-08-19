@@ -8,7 +8,6 @@ import { useApp } from '../store/appStore.jsx';
 import { analysisForHistory, buildMockAnalysis } from '../data/repository';
 import { humanizeBackendError } from '../utils/errorText';
 import Button from '../components/ui/Button';
-import Chip from '../components/ui/Chip';
 import BirdBookModal from '../components/BirdBookModal';
 import { isMockMode } from '../config/dataConfig.js';
 import { IconLeaf, IconUpload, IconPlay, IconMic, IconClock, IconBird, IconChevronRight, IconInfo, IconMap } from '../components/icons';
@@ -123,11 +122,6 @@ export default function HomeScreen() {
             <div className="tag">听一片绿地，知鸟是否安居</div>
           </div>
         </div>
-      </div>
-
-      {/* 数据源模式徽标（演示模式 / 真实识别） */}
-      <div className="mb-3 flex justify-center">
-        <Chip tone={mockMode ? 'mid' : 'good'}>{mockMode ? '演示模式' : '真实识别'}</Chip>
       </div>
 
       {/* 公共地图 —— 一键跳转网页（独立托管，系统浏览器打开） */}

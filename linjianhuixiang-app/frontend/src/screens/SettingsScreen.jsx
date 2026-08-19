@@ -6,15 +6,13 @@ import { useRef, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Button from '../components/ui/Button';
-import Toggle from '../components/ui/Toggle';
 import Chip from '../components/ui/Chip';
-import { exportReport } from '../utils/exportReport';
 import { getApiBase, getDataSource } from '../config/dataConfig.js';
 import { pingHealth } from '../data/repository';
 import { clearSession, changePassword, getSignAnonymous, getUsername, isLoggedIn, logout, setSignAnonymous } from '../services/authService';
-import { applyBackupPayload, fetchBackup, hasLocalData, uploadBackup } from '../services/syncService';
+import { applyBackupPayload, fetchBackup, uploadBackup } from '../services/syncService';
 import { loadHistory, loadRegions } from '../utils/localStore';
-import { IconFilter, IconWave, IconMic, IconShare, IconInfo, IconChart, IconChevronRight, IconUser, IconClock, IconUpload } from '../components/icons';
+import { IconFilter, IconShare, IconInfo, IconChart, IconChevronRight, IconUser, IconClock, IconUpload } from '../components/icons';
 
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
@@ -69,11 +67,6 @@ export default function SettingsScreen() {
       /* 存储不可用按已清空处理 */
     }
     dispatch({ type: 'TOAST', message: '已清空后端地址，恢复演示模式' });
-  };
-
-  const onExport = async () => {
-    const ok = await exportReport(state.analysis);
-    dispatch({ type: 'TOAST', message: ok ? '报告已保存到手机相册（PDF 为后续版本）' : '保存失败，请重试' });
   };
 
   // ---- v2 账号区 ----
@@ -192,8 +185,8 @@ export default function SettingsScreen() {
     <div>
       <AppBar title="设置" onBack={() => dispatch({ type: 'BACK' })} />
 
-      {/* 账号与公开署名（v2） */}
-      <div className="eyebrow mb-2">账号与公开署名</div>
+      {/* 账号 */}
+      <div className="eyebrow mb-2">账号</div>
       <div className="set-list">
         <div className="set-row" onClick={loggedIn ? undefined : onOpenLogin}>
           <div className="ic">
@@ -288,7 +281,15 @@ export default function SettingsScreen() {
                   : '上传时显示你的用户名；公共地图对外仅展示到天的日期，坐标为近似位置（已模糊数百米）。'}
               </p>
             </div>
-            {/* 云同步：本地数据备份到账号（换机/重装可恢复） */}
+          </>
+        )}
+      </div>
+
+      {/* 数据 */}
+      <div className="eyebrow mb-2">数据</div>
+      <div className="set-list">
+        {loggedIn ? (
+          <>
             <div className="set-row" onClick={syncBusy ? undefined : onBackupNow} style={syncBusy ? { opacity: 0.6 } : undefined}>
               <div className="ic">
                 <IconUpload size={18} />
@@ -313,6 +314,16 @@ export default function SettingsScreen() {
               </p>
             )}
           </>
+        ) : (
+          <div className="set-row">
+            <div className="ic">
+              <IconUpload size={18} />
+            </div>
+            <div className="t" style={{ flex: 1 }}>
+              <b>云端备份 / 恢复</b>
+              <span>登录账号后，可把本机数据备份到云端（换机不丢）</span>
+            </div>
+          </div>
         )}
       </div>
 
@@ -383,43 +394,18 @@ export default function SettingsScreen() {
         </div>
       </div>
 
-      {/* 处理与分析 */}
-      <div className="eyebrow mb-2">处理与分析</div>
+      {/* 使用说明与关于 */}
+      <div className="eyebrow mb-2">使用说明与关于</div>
       <div className="set-list">
-        <div className="set-row">
+        <div className="set-row" onClick={() => dispatch({ type: 'GO', screen: 'guide' })}>
           <div className="ic">
-            <IconWave size={18} />
+            <IconInfo size={18} />
           </div>
           <div className="t" style={{ flex: 1 }}>
-            <b>高通滤波降噪</b>
-            <span>削弱低频人为噪声 (P1)</span>
+            <b>使用说明</b>
+            <span>图文教程 · 快速上手</span>
           </div>
-          <Toggle checked={state.highpass} onChange={(v) => dispatch({ type: 'SET_HIGHPASS', value: v })} />
-        </div>
-        <div className="set-row">
-          <div className="ic">
-            <IconMic size={18} />
-          </div>
-          <div className="t" style={{ flex: 1 }}>
-            <b>实时录音分析</b>
-            <span>录完即分析 (P1)</span>
-          </div>
-          <Toggle checked={state.realtime} onChange={(v) => dispatch({ type: 'SET_REALTIME', value: v })} />
-        </div>
-      </div>
-
-      {/* 导出与说明 */}
-      <div className="eyebrow mb-2">导出与说明</div>
-      <div className="set-list">
-        <div className="set-row" onClick={onExport}>
-          <div className="ic">
-            <IconShare size={18} />
-          </div>
-          <div className="t" style={{ flex: 1 }}>
-            <b>导出格式</b>
-            <span>图片（PNG）已支持 · PDF 后续版本</span>
-          </div>
-          <Chip>PNG</Chip>
+          <IconChevronRight size={16} className="text-ink-faint" />
         </div>
         <div className="set-row" onClick={() => dispatch({ type: 'GO', screen: 'method' })}>
           <div className="ic">
