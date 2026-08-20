@@ -652,6 +652,7 @@ def get_public_clusters(
     minLat: float | None = Query(default=None),
     maxLat: float | None = Query(default=None),
     region: str | None = Query(default=None),
+    species: str | None = Query(default=None),
     minScore: int | None = Query(default=None, ge=0, le=100),
     maxScore: int | None = Query(default=None, ge=0, le=100),
     from_: str | None = Query(default=None, alias="from"),
@@ -660,8 +661,8 @@ def get_public_clusters(
 ) -> dict:
     """公共聚合查询（匿名只读）：按 cluster_key 聚合 + 质心模糊。
 
-    过滤：region 地区名模糊 / from-to 时间窗（聚合前 SQL 过滤）；
-         minScore-maxScore 评分区间（聚合后按簇加权均值过滤）。
+    过滤：region 地区名模糊 / species 物种名（记录含该物种才纳入聚合）/
+         from-to 时间窗（聚合前 SQL 过滤）；minScore-maxScore 评分区间（聚合后按簇加权均值过滤）。
     """
     viewport = {
         "min_lng": minLng,
@@ -673,6 +674,8 @@ def get_public_clusters(
         "to": to,
     }
     rows = database.get_db().list_public_records(viewport)
+    if species and species.strip():
+        rows = privacy_mod.rows_contain_species(rows, species)
     clusters = privacy_mod.aggregate_clusters(rows)
     if minScore is not None:
         clusters = [c for c in clusters if c["score"] >= minScore]
@@ -680,6 +683,32 @@ def get_public_clusters(
         clusters = [c for c in clusters if c["score"] <= maxScore]
     total = len(clusters)
     return {"clusters": clusters[:limit], "total": total}
+
+
+@router.get("/api/public/species", tags=["public"])
+def get_public_species(limit: int = Query(default=50, ge=1, le=200)) -> dict:
+    """已识别物种列表（匿名只读，供物种分布筛选/图鉴联动）。"""
+    rows = database.get_db().list_public_records()
+    ranked = privacy_mod.species_counts(rows, top=limit)
+    return {"species": ranked}
+
+
+@router.get("/api/public/stats", tags=["public"])
+def get_public_stats() -> dict:
+    """城市生态数据看板（匿名只读）：样本/簇/用户/物种/均分/档位分布/地区Top。"""
+    rows = database.get_db().list_public_records()
+    clusters = privacy_mod.aggregate_clusters(rows)
+    buckets = privacy_mod.score_buckets(rows)
+    return {
+        "totalSamples": len(rows),
+        "totalClusters": len(clusters),
+        "activeUsers": len({r["user_id"] for r in rows}),
+        "totalSpecies": len(privacy_mod.species_counts(rows, top=500)),
+        "scoreAvg": privacy_mod.weighted_score_avg(rows),
+        "buckets": buckets,
+        "speciesTop": privacy_mod.species_counts(rows, top=10),
+        "regionTop": privacy_mod.region_top(rows, top=10),
+    }
 
 
 @router.get(

@@ -20,6 +20,7 @@ import ComparePanel from './panels/ComparePanel.jsx';
 import ReportPanel from './panels/ReportPanel.jsx';
 import TrendPanel from './panels/TrendPanel.jsx';
 import Top10Panel from './panels/Top10Panel.jsx';
+import StatsPanel from './panels/StatsPanel.jsx';
 
 /* ===================== 常量 ===================== */
 
@@ -153,7 +154,7 @@ function formatScore(value) {
 
 /* ===================== 数据请求 ===================== */
 
-/** 拉取聚合点（匿名只读）：bbox + 可选检索/筛选（region/minScore/maxScore/from/to） */
+/** 拉取聚合点（匿名只读）：bbox + 可选检索/筛选（region/species/minScore/maxScore/from/to） */
 async function fetchClusters(bbox, filters = {}) {
   const params = new URLSearchParams();
   if (bbox) {
@@ -164,6 +165,8 @@ async function fetchClusters(bbox, filters = {}) {
   }
   const region = (filters.region || '').trim();
   if (region) params.set('region', region);
+  const species = (filters.species || '').trim();
+  if (species) params.set('species', species);
   if (Number.isFinite(Number(filters.minScore))) params.set('minScore', String(Number(filters.minScore)));
   if (Number.isFinite(Number(filters.maxScore))) params.set('maxScore', String(Number(filters.maxScore)));
   if (filters.from) params.set('from', filters.from);
@@ -178,6 +181,14 @@ async function fetchClusters(bbox, filters = {}) {
     clusters: data.clusters,
     total: Number.isFinite(Number(data.total)) ? Number(data.total) : 0,
   };
+}
+
+/** 已识别物种列表（匿名只读，物种分布筛选用） */
+async function speciesApi() {
+  const res = await fetch(`${API_BASE}/api/public/species?limit=100`);
+  if (!res.ok) return [];
+  const d = await res.json();
+  return Array.isArray(d.species) ? d.species : [];
 }
 
 /* ---------- 账号（与 App 同一后端 users 表，token 独立存网页 localStorage） ---------- */
@@ -424,10 +435,11 @@ export default function App() {
   const [banner, setBanner] = useState(null); // 后续刷新失败的轻提示
   const [tileError, setTileError] = useState(null); // 底图瓦片异常轻提示
 
-  // 检索 / 筛选（region 模糊 / 评分区间 / 时间窗）
-  const [filters, setFilters] = useState({ region: '', minScore: '', maxScore: '', range: 'all' });
+  // 检索 / 筛选（region 模糊 / 物种分布 / 评分区间 / 时间窗）
+  const [filters, setFilters] = useState({ region: '', species: '', minScore: '', maxScore: '', range: 'all' });
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+  const [speciesList, setSpeciesList] = useState([]); // 已识别物种（分布筛选项）
   const [candidates, setCandidates] = useState(null); // 同名歧义候选地点 [{name,lng,lat}]
 
   // 账号（与 App 互通）
@@ -457,6 +469,7 @@ export default function App() {
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
   const [showTop10, setShowTop10] = useState(false);
+  const [showStats, setShowStats] = useState(false);
 
   // 地图状态
   const [unsupported, setUnsupported] = useState(false);
@@ -483,6 +496,7 @@ export default function App() {
     const f = filtersRef.current;
     const applied = {
       region: f.region,
+      species: f.species,
       minScore: f.minScore === '' ? undefined : Number(f.minScore),
       maxScore: f.maxScore === '' ? undefined : Number(f.maxScore),
       from: f.range === '7d' ? daysAgoIso(7) : f.range === '30d' ? daysAgoIso(30) : undefined,
@@ -789,8 +803,8 @@ export default function App() {
 
   /** 清除检索/筛选：重置 + 飞回全景 */
   const clearFilters = () => {
-    setFilters({ region: '', minScore: '', maxScore: '', range: 'all' });
-    filtersRef.current = { region: '', minScore: '', maxScore: '', range: 'all' };
+    setFilters({ region: '', species: '', minScore: '', maxScore: '', range: 'all' });
+    filtersRef.current = { region: '', species: '', minScore: '', maxScore: '', range: 'all' };
     setCandidates(null);
     const map = mapRef.current;
     if (map && mapLoadedRef.current) {
@@ -821,6 +835,20 @@ export default function App() {
         setUser(null);
       }
     })();
+  }, []);
+
+  /* 已识别物种列表（物种分布筛选项）：拉取一次，失败静默（下拉为空） */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const list = await speciesApi();
+        if (alive) setSpeciesList(list);
+      } catch (e) {
+        /* 忽略 */
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   /* ---------- 分享（二维码）/ 热门排行 ---------- */
@@ -1089,6 +1117,9 @@ export default function App() {
           <button type="button" className="ljx-btn ljx-btn-ghost" onClick={openShare} title="生成二维码分享">
             📱 分享
           </button>
+          <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowStats(true)}>
+            📊 看板
+          </button>
           <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowTop10(true)}>
             🏆 排行
           </button>
@@ -1148,6 +1179,16 @@ export default function App() {
           <option value="all">全部时间</option>
           <option value="7d">近 7 天</option>
           <option value="30d">近 30 天</option>
+        </select>
+        <select
+          className="ljx-select"
+          value={filters.species}
+          onChange={(e) => setFilters((f) => ({ ...f, species: e.target.value }))}
+        >
+          <option value="">全部鸟种</option>
+          {speciesList.map((s) => (
+            <option key={s.name} value={s.name}>{s.name}（{s.count}）</option>
+          ))}
         </select>
         <button type="button" className="ljx-btn" onClick={() => applyFilters(filters.region)}>
           查询
@@ -1226,7 +1267,7 @@ export default function App() {
           <div className="ljx-overlay">
             <div className="ljx-overlay-card">
               <p>
-                {filters.region || filters.minScore !== '' || filters.maxScore !== '' || filters.range !== 'all'
+                {filters.region || filters.species || filters.minScore !== '' || filters.maxScore !== '' || filters.range !== 'all'
                   ? '没有匹配的数据，试试清除筛选'
                   : '还没有公开数据，快去 App 上传第一条吧'}
               </p>
@@ -1398,6 +1439,9 @@ export default function App() {
           onClose={() => setShowTop10(false)}
         />
       )}
+
+      {/* 城市生态数据看板 */}
+      {showStats && <StatsPanel onClose={() => setShowStats(false)} />}
 
       {/* 二维码分享弹窗 */}
       {showShare && (

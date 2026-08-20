@@ -153,3 +153,54 @@ def build_trend(rows: Iterable[dict]) -> list[dict]:
         )
     items.sort(key=lambda p: (p["date"], p.get("score", 0)))
     return items
+
+
+def region_top(rows: Iterable[dict], top: int = 10) -> list[dict]:
+    """按地区名汇总样本数，降序取 top。输出 [{regionName, count}]。"""
+    counter: dict[str, int] = {}
+    for r in rows:
+        name = str(r.get("region_name") or "").strip() or "未命名地区"
+        counter[name] = counter.get(name, 0) + 1
+    ranked = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{"regionName": name, "count": count} for name, count in ranked[:top]]
+
+
+def score_buckets(rows: Iterable[dict]) -> dict:
+    """宜居度三档计数：受压(<50) / 一般(50-69) / 宜居(>=70)。输出 {stressed, moderate, livable}。"""
+    buckets = {"stressed": 0, "moderate": 0, "livable": 0}
+    for r in rows:
+        s = float(r.get("score") or 0)
+        if s >= 70:
+            buckets["livable"] += 1
+        elif s >= 50:
+            buckets["moderate"] += 1
+        else:
+            buckets["stressed"] += 1
+    return buckets
+
+
+def weighted_score_avg(rows: Iterable[dict]) -> float:
+    """置信度加权宜居度均值（与聚合口径一致）。无数据返回 0.0。"""
+    items = list(rows)
+    if not items:
+        return 0.0
+    weights = [max(float(r.get("confidence") or 0), CONF_EPS) for r in items]
+    wsum = sum(weights)
+    if wsum <= 0:
+        return 0.0
+    return round(sum(float(r.get("score") or 0) * w for r, w in zip(items, weights)) / wsum, 1)
+
+
+def rows_contain_species(rows: Iterable[dict], species_name: str) -> list[dict]:
+    """过滤出 summary.species 中含指定物种名的记录（分布热力图用）。"""
+    target = str(species_name).strip()
+    if not target:
+        return list(rows)
+    out = []
+    for r in rows:
+        sp = (r.get("summary") or {}).get("species")
+        if not isinstance(sp, list):
+            continue
+        if any(str((s or {}).get("name") or "").strip() == target for s in sp):
+            out.append(r)
+    return out

@@ -399,3 +399,49 @@ def test_eco_report_llm_failure_fallback(client, monkeypatch):
     r = client.get(f"/api/public/clusters/{cid}/report")
     assert r.status_code == 200
     assert r.json()["source"] == "template"
+
+
+# ---------------------------------------------------------------------------
+# 数据看板 / 物种分布（stats / species / clusters?species=）
+# ---------------------------------------------------------------------------
+def test_public_stats_fields(client):
+    """stats 返回核心字段且数值自洽。"""
+    t1 = _register(client, "看板甲", "secret123")
+    _upload(client, t1, regionName="看板公园", lat=30.2, lng=120.1, score=72, summary={"species": [{"name": "麻雀"}, {"name": "白头鹎"}]})
+    _upload(client, t1, regionName="看板公园", lat=30.2, lng=120.1, score=45, summary={"species": [{"name": "麻雀"}]})
+    r = client.get("/api/public/stats")
+    assert r.status_code == 200
+    s = r.json()
+    assert s["totalSamples"] == 2
+    assert s["totalClusters"] == 1
+    assert s["activeUsers"] == 1
+    assert s["totalSpecies"] == 2
+    assert 40 <= s["scoreAvg"] <= 75
+    assert s["buckets"]["livable"] == 1 and s["buckets"]["stressed"] == 1
+    names = [x["name"] for x in s["speciesTop"]]
+    assert "麻雀" in names and "白头鹎" in names
+    assert s["regionTop"][0]["regionName"] == "看板公园"
+
+
+def test_public_species_list(client):
+    """species 列表按出现次数降序。"""
+    t = _register(client, "物种甲", "secret123")
+    _upload(client, t, regionName="物种园", lat=30.2, lng=120.1, score=60, summary={"species": [{"name": "麻雀"}, {"name": "乌鸫"}]})
+    _upload(client, t, regionName="物种园", lat=30.2, lng=120.1, score=61, summary={"species": [{"name": "麻雀"}]})
+    r = client.get("/api/public/species")
+    assert r.status_code == 200
+    lst = r.json()["species"]
+    assert lst[0]["name"] == "麻雀" and lst[0]["count"] == 2
+    assert any(x["name"] == "乌鸫" for x in lst)
+
+
+def test_clusters_species_filter(client):
+    """clusters?species= 只保留含该物种的记录聚合。"""
+    t = _register(client, "分布甲", "secret123")
+    _upload(client, t, regionName="麻雀公园", lat=30.2, lng=120.1, score=60, summary={"species": [{"name": "麻雀"}]})
+    _upload(client, t, regionName="翠鸟湖", lat=30.21, lng=120.11, score=55, summary={"species": [{"name": "普通翠鸟"}]})
+    r = client.get("/api/public/clusters", params={"species": "麻雀"})
+    assert r.status_code == 200
+    names = [c["regionName"] for c in r.json()["clusters"]]
+    assert names == ["麻雀公园"]
+    assert "翠鸟湖" not in names
