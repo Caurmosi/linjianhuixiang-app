@@ -194,6 +194,7 @@ class PublicRecordCreate(BaseModel):
 
     坐标解析顺序：overrideCoords > lat/lng > geocode 反查（路由层处理）。
     score 在路由层 clamp 到 0-100（不在此校验，避免 422）。
+    recordedAt：可选，数据回填/演示用（YYYY-MM-DD 或 ISO 时间）。App 正常上传不传，由服务端生成当前时间。
     """
     regionName: str = Field(..., min_length=1, max_length=100)
     lat: float | None = Field(default=None, ge=-90, le=90)
@@ -203,6 +204,7 @@ class PublicRecordCreate(BaseModel):
     summary: dict | None = None
     isAnonymous: bool = False
     overrideCoords: OverrideCoords | None = None
+    recordedAt: str | None = None
 
 
 class PublicRecordResponse(BaseModel):

@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pytest
+from datetime import datetime, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -445,3 +446,25 @@ def test_clusters_species_filter(client):
     names = [c["regionName"] for c in r.json()["clusters"]]
     assert names == ["麻雀公园"]
     assert "翠鸟湖" not in names
+
+
+def test_upload_recorded_at_backfill(client):
+    """recordedAt 可选回填：上传带指定日期 → detail 样本日期为该日期；不传则当天。"""
+    token = _register(client, "回填甲", "secret123")
+    r = _upload(client, token, regionName="回填公园", lat=30.2, lng=120.1, score=60,
+                recordedAt="2026-08-10T08:30:00")
+    assert r["id"] > 0
+    cid = r["clusterKey"]
+    d = client.get(f"/api/public/clusters/{cid}").json()
+    assert d["samples"][0]["date"] == "2026-08-10"
+    # 趋势按时间排序，含该点
+    assert any(p["date"] == "2026-08-10" for p in d["trend"])
+
+    # 不传 recordedAt → 今天
+    r2 = _upload(client, token, regionName="回填公园", lat=30.2, lng=120.1, score=62)
+    d2 = client.get(f"/api/public/clusters/{cid}").json()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    assert d2["samples"][1]["date"] == today
+    # 趋势升序：回填日期在前
+    dates = [p["date"] for p in d2["trend"]]
+    assert dates == sorted(dates)

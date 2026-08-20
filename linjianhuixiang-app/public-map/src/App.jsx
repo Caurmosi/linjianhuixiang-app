@@ -911,23 +911,28 @@ export default function App() {
 
   const [exportBusy, setExportBusy] = useState(false);
 
-  /** 导出当前筛选结果为 CSV：调全量接口（limit 500，忽略地图视口）→ 序列化 → 下载 */
+  /** 按当前筛选拉取全量聚合点（limit 500，忽略地图视口） */
+  const fetchAllClustersFiltered = async () => {
+    const f = filtersRef.current;
+    const params = new URLSearchParams({ limit: '500' });
+    if ((f.region || '').trim()) params.set('region', f.region.trim());
+    if ((f.species || '').trim()) params.set('species', f.species.trim());
+    if (f.minScore !== '') params.set('minScore', String(Number(f.minScore)));
+    if (f.maxScore !== '') params.set('maxScore', String(Number(f.maxScore)));
+    if (f.range === '7d') params.set('from', daysAgoIso(7));
+    else if (f.range === '30d') params.set('from', daysAgoIso(30));
+    const res = await fetch(`${API_BASE}/api/public/clusters?${params.toString()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return Array.isArray(data.clusters) ? data.clusters : [];
+  };
+
+  /** 导出当前筛选结果为 CSV（聚合，每地区一行）：调全量接口 → 序列化 → 下载 */
   const onExportCsv = async () => {
     if (exportBusy) return;
     setExportBusy(true);
     try {
-      const f = filtersRef.current;
-      const params = new URLSearchParams({ limit: '500' });
-      if ((f.region || '').trim()) params.set('region', f.region.trim());
-      if ((f.species || '').trim()) params.set('species', f.species.trim());
-      if (f.minScore !== '') params.set('minScore', String(Number(f.minScore)));
-      if (f.maxScore !== '') params.set('maxScore', String(Number(f.maxScore)));
-      if (f.range === '7d') params.set('from', daysAgoIso(7));
-      else if (f.range === '30d') params.set('from', daysAgoIso(30));
-      const res = await fetch(`${API_BASE}/api/public/clusters?${params.toString()}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const clusters = Array.isArray(data.clusters) ? data.clusters : [];
+      const clusters = await fetchAllClustersFiltered();
       if (!clusters.length) {
         flashToast('当前筛选下没有可导出的数据');
         return;
@@ -949,6 +954,60 @@ export default function App() {
       const date = new Date().toISOString().slice(0, 10);
       downloadCsv(`linjianhuixiang_clusters_${date}.csv`, csv);
       flashToast(`已导出 ${clusters.length} 个地区（含当前筛选）`);
+    } catch (e) {
+      flashToast('导出失败：' + ((e && e.message) || '网络异常'));
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  /** 导出明细 CSV（每条采样记录一行）：遍历聚合点 → 各自详情 samples → 汇总下载。
+   *  同一地区多次采样（不同日期）会各占一行 → MATLAB 可直接做时间对比。 */
+  const onExportDetailCsv = async () => {
+    if (exportBusy) return;
+    setExportBusy(true);
+    try {
+      const clusters = await fetchAllClustersFiltered();
+      if (!clusters.length) {
+        flashToast('当前筛选下没有可导出的数据');
+        return;
+      }
+      const rows = [];
+      for (let i = 0; i < clusters.length; i++) {
+        const c = clusters[i];
+        let samples = [];
+        try {
+          const d = await fetchClusterDetail(c.id);
+          samples = Array.isArray(d.samples) ? d.samples : [];
+        } catch (e) {
+          /* 单个地区详情失败跳过，不中断整体 */
+        }
+        for (const s of samples) {
+          rows.push({
+            regionName: c.regionName,
+            date: s.date || '',
+            score: s.score,
+            confidence: s.confidence,
+            noise: s.noise == null ? '' : s.noise,
+          });
+        }
+        if (i === clusters.length - 1) setExportBusy(false); // 让按钮文案先恢复，再弹 toast
+      }
+      if (!rows.length) {
+        flashToast('没有可导出的明细数据');
+        return;
+      }
+      const columns = [
+        { key: 'regionName', label: 'regionName' },
+        { key: 'date', label: 'date' },
+        { key: 'score', label: 'score' },
+        { key: 'confidence', label: 'confidence' },
+        { key: 'noise', label: 'noise' },
+      ];
+      const csv = toCsv(rows, columns);
+      const date = new Date().toISOString().slice(0, 10);
+      downloadCsv(`linjianhuixiang_samples_${date}.csv`, csv);
+      flashToast(`已导出 ${rows.length} 条样本记录（${clusters.length} 个地区，含时间维度）`);
     } catch (e) {
       flashToast('导出失败：' + ((e && e.message) || '网络异常'));
     } finally {
@@ -1259,9 +1318,18 @@ export default function App() {
           className="ljx-btn ljx-btn-ghost"
           onClick={onExportCsv}
           disabled={exportBusy}
-          title="导出当前筛选结果为 CSV（Excel 可直接打开，MATLAB readtable 可读取）"
+          title="导出当前筛选结果为 CSV（每地区一行，Excel 可直接打开，MATLAB readtable 可读取）"
         >
-          {exportBusy ? '导出中…' : '⬇️ 导出 CSV'}
+          {exportBusy ? '导出中…' : '⬇️ 聚合 CSV'}
+        </button>
+        <button
+          type="button"
+          className="ljx-btn ljx-btn-ghost"
+          onClick={onExportDetailCsv}
+          disabled={exportBusy}
+          title="导出每条采样记录（同一地区多次采样各占一行，可对比不同时间）"
+        >
+          {exportBusy ? '导出中…' : '📋 明细 CSV'}
         </button>
         <span className="ljx-filter-sep" />
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowCompare(true)}>

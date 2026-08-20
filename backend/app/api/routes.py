@@ -618,6 +618,8 @@ def create_public_record(
     username = None if is_anonymous else user["username"]
     key = privacy_mod.cluster_key(region_name, lat, lng)
     summary_json = json.dumps(payload.summary or {}, ensure_ascii=False)
+    # recordedAt：可选回填时间（演示/数据迁移用）；App 正常上传为空 → 服务端当前时间
+    created_at = (payload.recordedAt or "").strip() or _now_iso()
     row = database.get_db().insert_public_record(
         {
             "user_id": user["id"],
@@ -631,7 +633,7 @@ def create_public_record(
             "confidence": payload.confidence,
             "coords_source": coords_source,
             "summary_json": summary_json,
-            "created_at": _now_iso(),
+            "created_at": created_at,
         }
     )
     return {
