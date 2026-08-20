@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 
-const API_BASE = (import.meta.env.VITE_API_BASE || 'https://uegbddmczvrm.cloud.sealos.io').replace(/\/+$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE || 'https://caurmosi.top').replace(/\/+$/, '');
 
 async function fetchStats() {
   const res = await fetch(`${API_BASE}/api/public/stats`);

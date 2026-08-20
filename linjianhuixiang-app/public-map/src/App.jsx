@@ -25,7 +25,7 @@ import { downloadCsv, toCsv } from './utils/csv.js';
 
 /* ===================== 常量 ===================== */
 
-const API_BASE = (import.meta.env.VITE_API_BASE || 'https://uegbddmczvrm.cloud.sealos.io').replace(/\/+$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE || 'https://caurmosi.top').replace(/\/+$/, '');
 
 /** 初始中心：杭州附近（GCJ-02），zoom 11 */
 const DEFAULT_CENTER = [120.15, 30.26];

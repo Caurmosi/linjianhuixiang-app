@@ -29,8 +29,8 @@ jobs:
           npm run build
         env:
           # 默认后端地址写入构建产物：安装即连云端（用户仍可在设置页改，localStorage 优先）
-          # 2026-08-19：后端已迁移阿里云轻量服务器（Sealos 免费积分即将用完）
-          VITE_API_BASE: http://101.133.144.146:8000
+          # 2026-08-21：HTTPS 已上线（caurmosi.top，Let's Encrypt + nginx 443），App/网页数据统一
+          VITE_API_BASE: https://caurmosi.top
           # 关键：VITE_API_BASE 只决定基址，必须 VITE_USE_MOCK=false 才真正切真实 API 模式（否则仍是演示模式）
           VITE_USE_MOCK: 'false'
 
