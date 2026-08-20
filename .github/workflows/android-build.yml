@@ -51,4 +51,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linjianhuixiang-debug-apk
-          path: linjianhuixiang-app/android/app/build/outputs/apk/debug/*.apk
+          # 只上传已签名的 debug APK（AGP 8.x debug 目录还会生成 *-unsigned.apk，未签名无法安装，不上传避免混淆）
+          path: linjianhuixiang-app/android/app/build/outputs/apk/debug/app-debug.apk
