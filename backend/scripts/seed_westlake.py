@@ -43,7 +43,8 @@ _REGION_PARAMS = [
     },
 ]
 _START = date(2026, 7, 20)
-_END = date(2026, 8, 18)  # 30 天
+_END = date(2026, 8, 18)  # 30 天区间
+_SAMPLE_DAYS = 6          # 随机挑 6 天采样（间隔不规则），每天三地同步 = 18 条
 
 
 def _clamp(v, lo, hi):
@@ -51,11 +52,12 @@ def _clamp(v, lo, hi):
 
 
 def _generate_rows():
-    """3 地区 × 30 天每天一条 = 90 条；同一天三地都采样（可横向对比）。"""
+    """3 地区 × 随机 6 天每天一条 = 18 条；日期随机分布（不连续），同一天三地都采样。"""
     random.seed(20260820)  # 固定种子 → 数据可复现
+    span = (_END - _START).days + 1
+    pick_days = sorted(random.sample(range(span), _SAMPLE_DAYS))
     rows = []
-    days = (_END - _START).days + 1
-    for day in range(days):
+    for day in pick_days:
         d = _START + timedelta(days=day)
         is_weekend = d.weekday() >= 5
         for p in _REGION_PARAMS:
