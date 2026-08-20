@@ -713,6 +713,24 @@ def get_public_stats() -> dict:
     }
 
 
+def _sample_species(row: dict) -> list[str]:
+    """从行内 summary.species 提取鸟种名列表（去空/去重/剔除 unknown，保留顺序）。"""
+    sp = (row.get("summary") or {}).get("species")
+    if not isinstance(sp, list):
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in sp:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name or name.lower() in ("unknown", "未识别") or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
 @router.get(
     "/api/public/clusters/{cluster_key}",
     response_model=schemas.ClusterDetailResponse,
@@ -721,7 +739,7 @@ def get_public_stats() -> dict:
 def get_public_cluster_detail(
     cluster_key: str,
 ) -> dict:
-    """聚合点详情（匿名只读）：簇聚合 + 样本（昵称/日期/评分/噪声）+ 趋势序列（不返回坐标）。"""
+    """聚合点详情（匿名只读）：簇聚合 + 样本（昵称/日期/评分/噪声/鸟种）+ 趋势序列（不返回坐标）。"""
     rows = database.get_db().list_public_records()
     matched = [r for r in rows if r["cluster_key"] == cluster_key]
     if not matched:
@@ -736,6 +754,7 @@ def get_public_cluster_detail(
             "score": r["score"],
             "confidence": r["confidence"],
             "noise": privacy_mod.noise_of(r),
+            "species": _sample_species(r),
         }
         for r in matched
     ]

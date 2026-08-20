@@ -989,6 +989,7 @@ export default function App() {
             score: s.score,
             confidence: s.confidence,
             noise: s.noise == null ? '' : s.noise,
+            species: Array.isArray(s.species) && s.species.length ? s.species.join('、') : '',
           });
         }
         if (i === clusters.length - 1) setExportBusy(false); // 让按钮文案先恢复，再弹 toast
@@ -1003,6 +1004,7 @@ export default function App() {
         { key: 'score', label: 'score' },
         { key: 'confidence', label: 'confidence' },
         { key: 'noise', label: 'noise' },
+        { key: 'species', label: 'species' },
       ];
       const csv = toCsv(rows, columns);
       const date = new Date().toISOString().slice(0, 10);

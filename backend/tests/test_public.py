@@ -468,3 +468,23 @@ def test_upload_recorded_at_backfill(client):
     # 趋势升序：回填日期在前
     dates = [p["date"] for p in d2["trend"]]
     assert dates == sorted(dates)
+
+
+def test_cluster_detail_samples_include_species(client):
+    """detail samples 携带鸟种列表（summary.species 提取，去重）。"""
+    t = _register(client, "鸟种甲", "secret123")
+    _upload(client, t, regionName="鸟种园", lat=30.2, lng=120.1, score=62,
+            summary={"species": [{"name": "麻雀"}, {"name": "乌鸫"}, {"name": "麻雀"}]})
+    r = client.get("/api/public/clusters?region=%E9%B8%9F%E7%A7%8D%E5%9B%AD")
+    cid = r.json()["clusters"][0]["id"]
+    d = client.get(f"/api/public/clusters/{cid}").json()
+    sp = d["samples"][0]["species"]
+    assert sp == ["麻雀", "乌鸫"], f"应去重且保留顺序，实际 {sp}"
+
+    # 无 summary → 空列表不报错
+    t2 = _register(client, "鸟种乙", "secret123")
+    _upload(client, t2, regionName="无鸟园", lat=30.3, lng=120.2, score=55)
+    r2 = client.get("/api/public/clusters?region=%E6%97%A0%E9%B8%9F%E5%9B%AD")
+    cid2 = r2.json()["clusters"][0]["id"]
+    d2 = client.get(f"/api/public/clusters/{cid2}").json()
+    assert d2["samples"][0]["species"] == []

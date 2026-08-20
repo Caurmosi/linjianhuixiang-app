@@ -244,6 +244,7 @@ class ClusterSample(BaseModel):
 
     id 供「我的记录」识别（删除需登录且本人校验，返回 id 无越权风险）。
     noise 为样本噪声占比（summary.livability.noise，缺失为 None），供趋势/对比分析。
+    species 为该次采样识别到的鸟种名列表（summary.species 提取，缺失为空列表）。
     """
     id: int
     nickname: str
@@ -252,6 +253,7 @@ class ClusterSample(BaseModel):
     score: int
     confidence: float
     noise: float | None = None
+    species: list[str] = []
 
 
 class TrendPoint(BaseModel):
