@@ -55,7 +55,7 @@ def build():
                       ['服务层', 'FastAPI + uvicorn', 'REST API：分析、识别、公共数据、账号、备份、瓦片代理'],
                       ['算法层', 'BirdNET TFLite + numpy/scipy 自研 DSP', '鸟声识别、声学指数、噪声估计、宜居度合成'],
                       ['数据层', 'SQLite（可换 PostgreSQL）', '用户、Token、公共记录、云备份'],
-                      ['部署层', 'Docker / podman（阿里云轻量服务器），Sealos 备', '容器化部署、数据卷持久化、开机自启']],
+                      ['部署层', 'Docker / podman（阿里云轻量服务器）+ nginx HTTPS', '容器化部署、数据卷持久化、开机自启、HTTPS 反代']],
                      widths=[2.6, 4.4, 5.2])
     h2(doc, '1.2 核心数据流')
     bullet(doc, '录音分析：音频字节 → decode（ffmpeg/pyav）→ 重采样 48kHz/mono → 高通滤波 → BirdNET 推理 + STFT 指数 → 宜居度合成 → 返回 App；')
@@ -247,9 +247,9 @@ def build():
     bullet(doc, '生产环境：阿里云轻量应用服务器（2C2G，Alibaba Cloud Linux 3），容器化部署（podman-docker 兼容层）；')
     bullet(doc, '数据持久化：Docker 命名卷 /app/data（SQLite 文件 + 模型），容器重建数据不丢；')
     bullet(doc, '更新机制：服务器 /root/update.sh（备份 db → 拉新镜像 → 重建容器 → healthz 校验）；')
-    bullet(doc, 'HTTPS：nginx 反代 8000（域名 caurmosi.top，免费证书自动续期）；')
+    bullet(doc, 'HTTPS：nginx 反代 8000（域名 caurmosi.top，Let\u2019s Encrypt 证书，acme.sh + 阿里云 DNS hook 全自动续期）；')
     bullet(doc, '镜像构建：GitHub Actions 推送 ghcr.io，后端镜像 + Android APK 自动打包；')
-    bullet(doc, '多后端并存：Sealos（备份/过渡）与阿里云（生产）双后端，网页 API_BASE 可配置。')
+    bullet(doc, '生产统一：App / 公共网页 API_BASE 均指向 https://caurmosi.top（Sealos 已退役）。')
 
     # ============ 十六、测试 ============
     h1(doc, '十六、测试与质量保障')
