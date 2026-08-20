@@ -1,123 +1,40 @@
 # -*- coding: utf-8 -*-
-"""生成《林间回响》产品说明书.docx
+"""生成《林间回响》产品说明书.docx（论文风）
 
 以后功能有改动：编辑本脚本对应章节 → 重新运行
   python docs/gen_product_doc.py
-即重新生成 Word（内容从脚本维护，Word 为产物）。
 """
-from docx import Document
-from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml.ns import qn
-
-GREEN = RGBColor(0x1B, 0x5E, 0x3F)
-DARK = RGBColor(0x22, 0x33, 0x2A)
-
-
-def set_cn(run, size=10.5, bold=False, color=None, italic=False):
-    run.font.name = 'Times New Roman'
-    run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-    run.font.size = Pt(size)
-    run.font.bold = bold
-    run.font.italic = italic
-    if color:
-        run.font.color.rgb = color
-
-
-def h1(doc, text):
-    p = doc.add_paragraph()
-    r = p.add_run(text)
-    set_cn(r, 16, True, GREEN)
-    p.space_before = Pt(14)
-    return p
-
-
-def h2(doc, text):
-    p = doc.add_paragraph()
-    r = p.add_run(text)
-    set_cn(r, 13, True, DARK)
-    return p
-
-
-def h3(doc, text):
-    p = doc.add_paragraph()
-    r = p.add_run(text)
-    set_cn(r, 11.5, True)
-    return p
-
-
-def para(doc, text, indent=0.0, size=10.5, bold=False, color=None):
-    p = doc.add_paragraph()
-    if indent:
-        p.paragraph_format.left_indent = Cm(indent)
-    p.paragraph_format.space_after = Pt(3)
-    r = p.add_run(text)
-    set_cn(r, size, bold, color)
-    return p
-
-
-def bullet(doc, text, level=0):
-    p = doc.add_paragraph(style='List Bullet' if level == 0 else 'List Bullet 2')
-    r = p.add_run(text)
-    set_cn(r, 10.5)
-    p.paragraph_format.space_after = Pt(2)
-    return p
-
-
-def kv_table(doc, headers, rows, widths=None):
-    t = doc.add_table(rows=1, cols=len(headers))
-    t.style = 'Table Grid'
-    t.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for i, htext in enumerate(headers):
-        cell = t.rows[0].cells[i]
-        cell.text = ''
-        r = cell.paragraphs[0].add_run(htext)
-        set_cn(r, 10, True, RGBColor(0xFF, 0xFF, 0xFF))
-        shd = cell._tc.get_or_add_tcPr().makeelement(qn('w:shd'), {qn('w:val'): 'clear', qn('w:fill'): '1B5E3F'})
-        cell._tc.get_or_add_tcPr().append(shd)
-    for row in rows:
-        cells = t.add_row().cells
-        for i, val in enumerate(row):
-            cells[i].text = ''
-            r = cells[i].paragraphs[0].add_run(str(val))
-            set_cn(r, 10)
-    if widths:
-        for i, w in enumerate(widths):
-            for row in t.rows:
-                row.cells[i].width = Cm(w)
-    return t
+from docx.shared import Pt, Cm
+from docx_utils import new_doc, h1, h2, h3, para, bullet, three_line_table, _set_run, BLACK
 
 
 def build():
-    doc = Document()
-    # 页边距
-    for sec in doc.sections:
-        sec.left_margin = Cm(2.4)
-        sec.right_margin = Cm(2.4)
-        sec.top_margin = Cm(2.2)
-        sec.bottom_margin = Cm(2.2)
+    doc = new_doc()
 
     # ============ 封面 ============
     for _ in range(5):
         doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run('《林间回响》城市鸟类宜居度声学诊断平台')
-    set_cn(r, 22, True, GREEN)
+    _set_run(p.add_run('《林间回响》'), cn='黑体', size=26, bold=True)
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run('产品说明书')
-    set_cn(r, 18, True, DARK)
+    _set_run(p.add_run('城市鸟类宜居度声学诊断平台'), cn='黑体', size=22, bold=True)
     doc.add_paragraph()
-    for line in ['版本：V1.0（2026-08）', '产品形态：Android 应用 + 公共地图网页 + 云端服务', '一句话定位：用鸟声读懂城市，让每一片绿地拥有可量化的生态温度']:
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_run(p.add_run('产 品 说 明 书'), cn='黑体', size=18)
+    for _ in range(4):
+        doc.add_paragraph()
+    for line in ['版本：V1.0（2026-08）', '产品形态：Android 应用 + 公共地图网页 + 云端服务',
+                 '一句话定位：用鸟声读懂城市，让每一片绿地拥有可量化的生态温度']:
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run(line); set_cn(r, 11)
+        _set_run(p.add_run(line), size=12)
     doc.add_page_break()
 
-    # ============ 目录说明 ============
-    h1(doc, '产品说明书目录')
+    # ============ 目录 ============
+    h1(doc, '目录')
     for t in ['一、产品概述', '二、产品价值', '三、App 端功能详解', '四、公共地图网页功能详解',
               '五、典型应用场景', '六、隐私与数据安全', '七、总结与展望', '附录 A：名词解释']:
-        para(doc, t, indent=0.5)
+        para(doc, t, indent=0)
     doc.add_page_break()
 
     # ============ 一、产品概述 ============
@@ -135,14 +52,14 @@ def build():
     para(doc, '「用鸟声读懂城市」——把生态声学实验室级别的分析能力装进手机，让每个普通人都能成为城市生态的观测者。')
 
     h2(doc, '1.3 目标用户')
-    kv_table(doc,
-             ['用户群体', '使用场景', '核心诉求'],
-             [['观鸟爱好者', '外出观鸟时随手录音', '识别鸟种、记录分布'],
-              ['学生 / 参赛团队', '课程设计、竞赛论文', '获取可分析的数据与图表'],
-              ['普通市民', '公园散步时好奇身边的鸟', '了解城市生态、参与公民科学'],
-              ['科研人员（辅助）', '城市生态声学调查', '低成本、可重复的监测手段'],
-              ['城市管理者（潜在）', '绿地生态质量评估', '为规划提供参考指标']],
-             widths=[3.2, 4.5, 4.5])
+    three_line_table(doc,
+                     ['用户群体', '使用场景', '核心诉求'],
+                     [['观鸟爱好者', '外出观鸟时随手录音', '识别鸟种、记录分布'],
+                      ['学生 / 参赛团队', '课程设计、竞赛论文', '获取可分析的数据与图表'],
+                      ['普通市民', '公园散步时好奇身边的鸟', '了解城市生态、参与公民科学'],
+                      ['科研人员（辅助）', '城市生态声学调查', '低成本、可重复的监测手段'],
+                      ['城市管理者（潜在）', '绿地生态质量评估', '为规划提供参考指标']],
+                     widths=[3.2, 4.5, 4.5])
 
     h2(doc, '1.4 核心理念')
     para(doc, '鸟鸣是生物多样性的「声学指纹」。传统鸟类调查依赖专业人员逐点人工计数，成本高、覆盖小、难以重复。'
@@ -151,23 +68,21 @@ def build():
               '使公众以极低成本参与到持续、大范围、可复现的城市生态观测中——这正是「公民科学」的精髓。')
 
     # ============ 二、产品价值 ============
+    doc.add_page_break()
     h1(doc, '二、产品价值')
     h2(doc, '2.1 科学价值')
     bullet(doc, '声学指数体系：内置 ACI（声学复杂度）、NDSI（归一化声景）、ADI（声学多样性）、H（声学熵）四个国际通用生态声学指数，口径与 Pieretti（2011）、Kasten（2012）等文献一致；')
     bullet(doc, '鸟声识别：采用国际主流 BirdNET（GLOBAL 6K V2.4）模型本地推理，可识别 6500+ 物种（国内部署加载中国鸟种配置），识别结果与生态声学指标融合，形成「物种—声景—噪声」三位一体的宜居度模型；')
     bullet(doc, '可重复性：同一录音重复分析结果一致，支持时间序列监测（同一地区多次采样 → 趋势分析），为「城市生态随时间如何变化」提供数据基础；')
     bullet(doc, '低成本：硬件仅需一部手机，软件免费，单人即可完成过去需要一个团队的工作。')
-
     h2(doc, '2.2 社会价值')
     bullet(doc, '唤醒生态意识：让公众直观看到「哪里鸟多、哪里鸟少」，理解噪声与生物多样性的关系；')
     bullet(doc, '公众参与式监测：用户即传感器，众包构建城市生物多样性数据库；')
     bullet(doc, '科普教育：内置 121 种常见鸟图鉴与图文使用说明，降低观鸟门槛。')
-
     h2(doc, '2.3 教育价值（竞赛 / 课程设计）')
     bullet(doc, '完整的产品闭环：从录音采集、算法分析、数据可视化到公共服务，覆盖「传感器—算法—数据—应用」全链路；')
     bullet(doc, '真实可用的数据管道：公共地图支持导出 CSV（聚合 / 明细两种粒度），可直接导入 MATLAB / Excel 开展统计分析；')
     bullet(doc, '算法可解释：宜居度由生物多样性、声环境质量、人为噪声三个可解释维度加权耦合而成，适合论文论证。')
-
     h2(doc, '2.4 应用价值')
     bullet(doc, '城市绿地质检：快速评估公园、滨水绿地、社区花园的生态质量，为规划与养护提供参考；')
     bullet(doc, '环境评价辅助：噪声影响评估、生态修复效果的「前后对比」监测；')
@@ -186,18 +101,18 @@ def build():
 
     h2(doc, '3.2 录音与识别')
     para(doc, '录音结束后自动上传至云端分析（也可在设置页切换本地演示模式）。分析引擎链路：')
-    para(doc, '音频解码 → 重采样 48kHz → 单声道 → 高通滤波降噪 → BirdNET 鸟声识别 + 声学指数计算 → 宜居度合成。', indent=0.5)
+    para(doc, '音频解码 → 重采样 48kHz → 单声道 → 高通滤波降噪 → BirdNET 鸟声识别 + 声学指数计算 → 宜居度合成。', indent=0)
     para(doc, '识别结果包括：识别到的主要鸟种（含拉丁学名、置信度、出现频次、时段）、鸟声活动度、声学指数、宜居度评分。')
 
     h2(doc, '3.3 分析结果页')
-    kv_table(doc,
-             ['模块', '内容', '用户价值'],
-             [['宜居度大分', '0–100 分 + 等级（宜居/一般/受压）+ 置信度', '一眼看懂绿地健康度'],
-              ['生态维度', '生物多样性 bio / 声环境 sound / 人为噪声 noise', '理解评分来源'],
-              ['物种列表', '识别到的鸟种（名称/学名/置信度/频率/时段）', '回答「有什么鸟」'],
-              ['声学指数', 'ACI / NDSI / ADI / H 四项', '供专业分析'],
-              ['时间热力图', '4×12 时频能量图', '直观看到鸟鸣节奏']],
-             widths=[3.2, 6.5, 2.5])
+    three_line_table(doc,
+                     ['模块', '内容', '用户价值'],
+                     [['宜居度大分', '0–100 分 + 等级（宜居/一般/受压）+ 置信度', '一眼看懂绿地健康度'],
+                      ['生态维度', '生物多样性 bio / 声环境 sound / 人为噪声 noise', '理解评分来源'],
+                      ['物种列表', '识别到的鸟种（名称/学名/置信度/频率/时段）', '回答「有什么鸟」'],
+                      ['声学指数', 'ACI / NDSI / ADI / H 四项', '供专业分析'],
+                      ['时间热力图', '4×12 时频能量图', '直观看到鸟鸣节奏']],
+                     widths=[3.2, 6.5, 2.5])
     bullet(doc, '导出报告：一键生成分析报告图片保存到相册，可用于记录与分享。')
 
     h2(doc, '3.4 物种清单')
@@ -252,8 +167,7 @@ def build():
     bullet(doc, '鸟种筛选（「全部鸟种」下拉，只看记录到该鸟的地区 → 物种分布一目了然）；')
     bullet(doc, '评分区间、时间窗（近 7 天 / 30 天）筛选。')
 
-    h2(doc, '4.3 聚合点详情'
-            '')
+    h2(doc, '4.3 聚合点详情')
     bullet(doc, '评分趋势：同一地区多次采样的时间折线（SVG 图表），观察生态随时间的起伏；')
     bullet(doc, '生态简报：一键生成地区生态文字报告（大模型生成，无 Key 自动降级为规则模板）。')
 
@@ -312,21 +226,21 @@ def build():
     # ============ 附录 A ============
     doc.add_page_break()
     h1(doc, '附录 A：名词解释')
-    kv_table(doc,
-             ['名词', '解释'],
-             [['宜居度', '0–100 分，由生物多样性(55%)与声环境质量(45%)加权合成；≥70 宜居、≥50 一般、<50 受压'],
-              ['ACI', '声学复杂度指数，衡量生物声活动的时间变化复杂度'],
-              ['NDSI', '归一化声景指数，生物声带与人为噪声带的能量比，正值为生物声主导'],
-              ['ADI', '声学多样性指数，基于频带能量分布的 Shannon 熵'],
-              ['H', '声学熵/均匀度，时间熵×频谱熵，越接近 1 声源分布越均衡'],
-              ['BirdNET', '康奈尔大学开源的鸟声识别模型（GLOBAL 6K V2.4，TFLite）'],
-              ['公民科学', '公众参与的科学研究，用户即数据采集者'],
-              ['被动声学监测', '不干扰对象、用录音设备持续采集环境声音的监测方法'],
-              ['cluster_key', '聚合点标识：地区名+坐标网格哈希，同一地区多次采样自动聚合']],
-             widths=[3.2, 9.0])
+    three_line_table(doc,
+                     ['名词', '解释'],
+                     [['宜居度', '0–100 分，由生物多样性(55%)与声环境质量(45%)加权合成；≥70 宜居、≥50 一般、<50 受压'],
+                      ['ACI', '声学复杂度指数，衡量生物声活动的时间变化复杂度'],
+                      ['NDSI', '归一化声景指数，生物声带与人为噪声带的能量比，正值为生物声主导'],
+                      ['ADI', '声学多样性指数，基于频带能量分布的 Shannon 熵'],
+                      ['H', '声学熵/均匀度，时间熵×频谱熵，越接近 1 声源分布越均衡'],
+                      ['BirdNET', '康奈尔大学开源的鸟声识别模型（GLOBAL 6K V2.4，TFLite）'],
+                      ['公民科学', '公众参与的科学研究，用户即数据采集者'],
+                      ['被动声学监测', '不干扰对象、用录音设备持续采集环境声音的监测方法'],
+                      ['cluster_key', '聚合点标识：地区名+坐标网格哈希，同一地区多次采样自动聚合']],
+                     widths=[3.2, 9.0])
 
     doc.save('F:/Desktop/linjianhuixiang-prototype/docs/《林间回响》产品说明书.docx')
-    print('产品说明书已生成')
+    print('产品说明书已生成（论文风）')
 
 
 if __name__ == '__main__':

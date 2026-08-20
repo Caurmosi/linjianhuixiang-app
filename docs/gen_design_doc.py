@@ -1,123 +1,36 @@
 # -*- coding: utf-8 -*-
-"""生成《林间回响》技术设计说明书.docx
+"""生成《林间回响》技术设计说明书.docx（论文风 + Word 数学公式）
 
-以后功能/算法有改动：编辑本脚本对应章节 → 重新运行
+公式为 LaTeX 字符串 → MathML → OMML，在 Word 中显示为可读数学公式
+（分数 / 求和 / 上下标等真实排版，无需肉眼编译）。
+
+以后算法有改动：编辑本脚本对应章节 → 重新运行
   python docs/gen_design_doc.py
-即重新生成 Word（内容从脚本维护，Word 为产物）。
 """
-from docx import Document
-from docx.shared import Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml.ns import qn
-
-GREEN = RGBColor(0x1B, 0x5E, 0x3F)
-DARK = RGBColor(0x22, 0x33, 0x2A)
-
-
-def set_cn(run, size=10.5, bold=False, color=None, italic=False):
-    run.font.name = 'Times New Roman'
-    run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-    run.font.size = Pt(size)
-    run.font.bold = bold
-    run.font.italic = italic
-    if color:
-        run.font.color.rgb = color
-
-
-def h1(doc, text):
-    p = doc.add_paragraph()
-    r = p.add_run(text)
-    set_cn(r, 16, True, GREEN)
-    return p
-
-
-def h2(doc, text):
-    p = doc.add_paragraph()
-    r = p.add_run(text)
-    set_cn(r, 13, True, DARK)
-    return p
-
-
-def h3(doc, text):
-    p = doc.add_paragraph()
-    r = p.add_run(text)
-    set_cn(r, 11.5, True)
-    return p
-
-
-def para(doc, text, indent=0.0, size=10.5, bold=False, color=None):
-    p = doc.add_paragraph()
-    if indent:
-        p.paragraph_format.left_indent = Cm(indent)
-    p.paragraph_format.space_after = Pt(3)
-    r = p.add_run(text)
-    set_cn(r, size, bold, color)
-    return p
-
-
-def formula(doc, text):
-    """公式段：居中、等宽效果（用 Times 加粗示意，竞赛可接受）。"""
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(4)
-    p.paragraph_format.space_after = Pt(4)
-    r = p.add_run(text)
-    set_cn(r, 10.5, True)
-    return p
-
-
-def bullet(doc, text, level=0):
-    p = doc.add_paragraph(style='List Bullet' if level == 0 else 'List Bullet 2')
-    r = p.add_run(text)
-    set_cn(r, 10.5)
-    p.paragraph_format.space_after = Pt(2)
-    return p
-
-
-def kv_table(doc, headers, rows, widths=None):
-    t = doc.add_table(rows=1, cols=len(headers))
-    t.style = 'Table Grid'
-    t.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for i, htext in enumerate(headers):
-        cell = t.rows[0].cells[i]
-        cell.text = ''
-        r = cell.paragraphs[0].add_run(htext)
-        set_cn(r, 10, True, RGBColor(0xFF, 0xFF, 0xFF))
-        shd = cell._tc.get_or_add_tcPr().makeelement(qn('w:shd'), {qn('w:val'): 'clear', qn('w:fill'): '1B5E3F'})
-        cell._tc.get_or_add_tcPr().append(shd)
-    for row in rows:
-        cells = t.add_row().cells
-        for i, val in enumerate(row):
-            cells[i].text = ''
-            r = cells[i].paragraphs[0].add_run(str(val))
-            set_cn(r, 10)
-    if widths:
-        for i, w in enumerate(widths):
-            for row in t.rows:
-                row.cells[i].width = Cm(w)
-    return t
+from docx.shared import Pt
+from docx_utils import (new_doc, h1, h2, h3, para, bullet, formula,
+                        three_line_table, _set_run)
 
 
 def build():
-    doc = Document()
-    for sec in doc.sections:
-        sec.left_margin = Cm(2.4); sec.right_margin = Cm(2.4)
-        sec.top_margin = Cm(2.2); sec.bottom_margin = Cm(2.2)
+    doc = new_doc()
 
     # ============ 封面 ============
     for _ in range(5):
         doc.add_paragraph()
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run('《林间回响》城市鸟类宜居度声学诊断平台')
-    set_cn(r, 22, True, GREEN)
+    _set_run(p.add_run('《林间回响》'), cn='黑体', size=26, bold=True)
     p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run('技术设计说明书')
-    set_cn(r, 18, True, DARK)
+    _set_run(p.add_run('城市鸟类宜居度声学诊断平台'), cn='黑体', size=22, bold=True)
     doc.add_paragraph()
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_run(p.add_run('技 术 设 计 说 明 书'), cn='黑体', size=18)
+    for _ in range(4):
+        doc.add_paragraph()
     for line in ['版本：V1.0（2026-08）', '面向：技术评审 / 竞赛论文技术章节 / 工程维护']:
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run(line); set_cn(r, 11)
+        _set_run(p.add_run(line), size=12)
     doc.add_page_break()
 
     # ============ 目录 ============
@@ -127,25 +40,23 @@ def build():
               '九、公共地图系统（聚合 / 隐私 / 模糊）', '十、数据看板与统计', '十一、生态简报',
               '十二、账号与云同步', '十三、前端 App 架构', '十四、公共地图网页', '十五、部署与运维',
               '十六、测试与质量保障', '十七、参考文献']:
-        para(doc, t, indent=0.5)
+        para(doc, t, indent=0)
     doc.add_page_break()
 
     # ============ 一、系统总体架构 ============
     h1(doc, '一、系统总体架构')
     h2(doc, '1.1 架构总览')
-    para(doc, '系统为「端—云」双层架构：')
-    para(doc, 'Android App（React 18 H5 壳） → 云端后端（FastAPI，Docker 容器） → SQLite 数据库；'
-              '公共地图网页（React + MapLibre GL）独立托管，只读访问云端公共接口。', indent=0.5)
-    kv_table(doc,
-             ['层', '技术', '职责'],
-             [['表现层 App', 'React 18 + Vite 5 + Tailwind CSS，Android WebView 套壳', '录音、导入、结果展示、地区管理、图鉴、云同步'],
-              ['表现层 网页', 'React 18 + MapLibre GL 3.6 + 高德瓦片', '公共地图浏览 / 检索 / 对比 / 看板 / 导出'],
-              ['服务层', 'FastAPI + uvicorn', 'REST API：分析、识别、公共数据、账号、备份、瓦片代理'],
-              ['算法层', 'BirdNET TFLite + numpy/scipy 自研 DSP', '鸟声识别、声学指数、噪声估计、宜居度合成'],
-              ['数据层', 'SQLite（可换 PostgreSQL）', '用户、Token、公共记录、云备份'],
-              ['部署层', 'Docker / podman（阿里云轻量服务器），Sealos 备', '容器化部署、数据卷持久化、开机自启']],
-             widths=[2.6, 4.4, 5.2])
-
+    para(doc, '系统为「端—云」双层架构：Android App（React 18 H5 壳）→ 云端后端（FastAPI，Docker 容器）→ '
+              'SQLite 数据库；公共地图网页（React + MapLibre GL）独立托管，只读访问云端公共接口。')
+    three_line_table(doc,
+                     ['层', '技术', '职责'],
+                     [['表现层 App', 'React 18 + Vite 5 + Tailwind CSS，Android WebView 套壳', '录音、导入、结果展示、地区管理、图鉴、云同步'],
+                      ['表现层 网页', 'React 18 + MapLibre GL 3.6 + 高德瓦片', '公共地图浏览 / 检索 / 对比 / 看板 / 导出'],
+                      ['服务层', 'FastAPI + uvicorn', 'REST API：分析、识别、公共数据、账号、备份、瓦片代理'],
+                      ['算法层', 'BirdNET TFLite + numpy/scipy 自研 DSP', '鸟声识别、声学指数、噪声估计、宜居度合成'],
+                      ['数据层', 'SQLite（可换 PostgreSQL）', '用户、Token、公共记录、云备份'],
+                      ['部署层', 'Docker / podman（阿里云轻量服务器），Sealos 备', '容器化部署、数据卷持久化、开机自启']],
+                     widths=[2.6, 4.4, 5.2])
     h2(doc, '1.2 核心数据流')
     bullet(doc, '录音分析：音频字节 → decode（ffmpeg/pyav）→ 重采样 48kHz/mono → 高通滤波 → BirdNET 推理 + STFT 指数 → 宜居度合成 → 返回 App；')
     bullet(doc, '公共上传：App 保存的地区快照 → POST /api/public/records（Bearer Token）→ 落库（cluster_key 聚合键）→ 网页实时聚合查询；')
@@ -153,18 +64,18 @@ def build():
 
     # ============ 二、技术栈 ============
     h1(doc, '二、技术栈')
-    kv_table(doc,
-             ['模块', '选型', '说明'],
-             [['后端框架', 'FastAPI 0.11x + uvicorn', '异步 ASGI，自动 OpenAPI 文档，Pydantic 契约校验'],
-              ['音频解码', 'ffmpeg（外部进程）+ PyAV 双通道', 'mp3/m4a/webm 等容器解码；WAV 直读'],
-              ['数值计算', 'numpy + scipy + soundfile', 'STFT、滤波器组、指数计算；自研 DSP 不依赖 librosa'],
-              ['推理引擎', 'BirdNET GLOBAL 6K V2.4（TFLite）', '本地推理，离线可用；模型缺失自动降级启发式引擎'],
-              ['前端 App', 'React 18 + Vite 5 + Tailwind 3', 'H5 单页应用，Android WebView 套壳（Kotlin）'],
-              ['公共网页', 'React 18 + MapLibre GL 3.6 + qrcode', '高德栅格瓦片代理；二维码分享'],
-              ['数据库', 'SQLite（WAL）', '单文件、零运维；预留 PostgreSQL 迁移'],
-              ['部署', 'Docker/podman + nginx（阿里云）', '容器化、数据卷 /app/data、开机自启、HTTPS 反代'],
-              ['CI', 'GitHub Actions', '后端镜像构建推送 ghcr；Android APK 自动打包']],
-             widths=[2.8, 5.2, 4.2])
+    three_line_table(doc,
+                     ['模块', '选型', '说明'],
+                     [['后端框架', 'FastAPI 0.11x + uvicorn', '异步 ASGI，自动 OpenAPI 文档，Pydantic 契约校验'],
+                      ['音频解码', 'ffmpeg（外部进程）+ PyAV 双通道', 'mp3/m4a/webm 等容器解码；WAV 直读'],
+                      ['数值计算', 'numpy + scipy + soundfile', 'STFT、滤波器组、指数计算；自研 DSP 不依赖 librosa'],
+                      ['推理引擎', 'BirdNET GLOBAL 6K V2.4（TFLite）', '本地推理，离线可用；模型缺失自动降级启发式引擎'],
+                      ['前端 App', 'React 18 + Vite 5 + Tailwind 3', 'H5 单页应用，Android WebView 套壳（Kotlin）'],
+                      ['公共网页', 'React 18 + MapLibre GL 3.6 + qrcode', '高德栅格瓦片代理；二维码分享'],
+                      ['数据库', 'SQLite（WAL）', '单文件、零运维；预留 PostgreSQL 迁移'],
+                      ['部署', 'Docker/podman + nginx（阿里云）', '容器化、数据卷 /app/data、开机自启、HTTPS 反代'],
+                      ['CI', 'GitHub Actions', '后端镜像构建推送 ghcr；Android APK 自动打包']],
+                     widths=[2.8, 5.2, 4.2])
 
     # ============ 三、音频预处理 ============
     doc.add_page_break()
@@ -179,13 +90,13 @@ def build():
     bullet(doc, '高通滤波：去除 200Hz 以下交通/机械低频（削弱风噪与电机声）。')
     h2(doc, '3.3 短时傅里叶变换（STFT）')
     para(doc, '声学指数与热力图的基础为 STFT 幅度谱：')
-    formula(doc, 'X(t, f) = | Σ_{n} x(n) · w(n − t·H) · e^{−j2πfn/N} |')
-    para(doc, '参数：N_FFT=1024，HOP=512，窗函数为 scipy.signal.get_window("hann")；'
-              '48kHz 下频率分辨率 ≈ 46.9 Hz，帧长 ≈ 21.3ms，时间分辨率 ≈ 10.7ms。')
+    formula(doc, r'X(t,f)=\left|\sum_{n} x(n)\,w(n-tH)\,e^{-j2\pi fn/N}\right|')
+    para(doc, '其中 x(n) 为时域采样序列，w(·) 为窗函数（Hann），N 为 FFT 长度，H 为帧移。'
+              '参数：N=1024，H=512；48kHz 下频率分辨率约 46.9Hz，帧长约 21.3ms，时间分辨率约 10.7ms。')
     h2(doc, '3.4 Mel 滤波器组')
-    para(doc, '识别与可视化使用 Mel 刻度：')
-    formula(doc, 'mel(f) = 2595 · log10(1 + f/700)')
-    para(doc, '三角滤波器组（Slaney 归一化），默认 128 Mel 频带，fmin=0、fmax=采样率/2。')
+    para(doc, '识别与可视化使用 Mel 刻度，频率到 Mel 的映射为：')
+    formula(doc, r'\mathrm{mel}(f)=2595\,\log_{10}\left(1+\frac{f}{700}\right)')
+    para(doc, '三角滤波器组（Slaney 归一化），默认 128 个 Mel 频带，fmin=0，fmax=采样率/2。')
 
     # ============ 四、鸟声识别 ============
     doc.add_page_break()
@@ -193,13 +104,11 @@ def build():
     h2(doc, '4.1 主引擎：BirdNET GLOBAL 6K V2.4（TFLite）')
     bullet(doc, '模型：康奈尔大学 BirdNET 官方 V2.4 TFLite 模型，6,522 类（全球鸟种），本地推理；')
     bullet(doc, '输入：3 秒原始波形（48kHz × 3s = 144,000 样本），float32；')
-    bullet(doc, '输出：每类 logits → flat-sigmoid 概率（官方 sensitivity=−1 / bias=1.0，即标准 sigmoid）：')
-    formula(doc, 'p_k = 1 / (1 + exp(−z_k))')
+    bullet(doc, '输出：每类 logits 经 flat-sigmoid 映射为概率（官方 sensitivity=−1 / bias=1.0，即标准 sigmoid）：')
+    formula(doc, r'p_k=\frac{1}{1+e^{-z_k}}')
     bullet(doc, '分窗：长录音按 3s 切窗（不足零填充），逐窗推理；')
-    bullet(doc, '跨窗聚合：物种置信度取「各窗最大值」（某鸟仅在 3s 窗口鸣叫也能被捕获）；'
-                'freq（出现频次）= 置信度 ≥ 阈值的窗口数（占据率）；')
-    bullet(doc, '输出条目：{id, name(中文), latin, conf(0-1), freq, period(清晨/上午/黄昏/全天)}；'
-                '阈值默认 0.50，可调 0.30–0.90；topK 默认 20。')
+    bullet(doc, '跨窗聚合：物种置信度取「各窗最大值」（某鸟仅在 3s 窗口鸣叫也能被捕获）；freq（出现频次）= 置信度 ≥ 阈值的窗口数（占据率）；')
+    bullet(doc, '输出条目：{id, name(中文), latin, conf(0-1), freq, period(清晨/上午/黄昏/全天)}；阈值默认 0.50，可调 0.30–0.90；topK 默认 20。')
     h2(doc, '4.2 降级引擎：启发式鸟鸣检测')
     para(doc, '当模型文件缺失（离线环境）时，使用自研启发式引擎，保证功能不中断：')
     bullet(doc, '音节切分：短时能量包络 + 频带能量检测，提取候选音节（起止帧）；')
@@ -213,35 +122,30 @@ def build():
     doc.add_page_break()
     h1(doc, '五、生态声学指数')
     para(doc, '四个指数全部基于 48kHz STFT 幅度谱计算，口径与生态声学文献一致。')
-
     h2(doc, '5.1 ACI —— 声学复杂度（Pieretti et al., 2011）')
-    formula(doc, 'ACI = mean_f [ Σ_t |dB(f,t) − dB(f,t−1)| / Σ_t (dB(f,t) − min_f dB(f) + 1) ]')
+    formula(doc, r'\mathrm{ACI}=\frac{1}{N_f}\sum_{f}\frac{\sum_{t}\left|dB(f,t)-dB(f,t-1)\right|}{\sum_{t}\left(dB(f,t)-\min_{f}dB(f)+1\right)}')
     para(doc, '实现：先转 dB（下限 −80dB），按频点累计相邻帧 dB 差绝对值，除以平移后 dB 和，再对频点取均值；'
               'dB 域使鸟鸣的强动态变化高于宽频噪声的小幅抖动，鸟鸣场景 ACI 更高。'
               '展示值：pct_ACI = round(100 × tanh(8.0 × ACI))。')
-
     h2(doc, '5.2 NDSI —— 归一化声景（Kasten et al., 2012）')
-    formula(doc, 'NDSI = (E_bio − E_anthro) / (E_bio + E_anthro) ,  ∈ [−1, 1]')
-    para(doc, 'E_bio = 2–11kHz 频带功率（生物声带）；E_anthro = 1–2kHz 频带功率（人为/交通声带）。'
+    formula(doc, r'\mathrm{NDSI}=\frac{E_{bio}-E_{anthro}}{E_{bio}+E_{anthro}},\quad \mathrm{NDSI}\in[-1,1]')
+    para(doc, 'E_bio 为 2–11kHz 频带功率（生物声带），E_anthro 为 1–2kHz 频带功率（人为/交通声带）。'
               '正值表示生物声主导，负值表示人为噪声主导。展示值：pct_NDSI = (NDSI+1)/2 × 100。')
-
     h2(doc, '5.3 ADI —— 声学多样性（Villanueva-Rivera et al., 2011）')
-    formula(doc, 'ADI = − Σ_i p_i · ln(p_i) / ln(N_sel)')
-    para(doc, '将 0–11kHz 均分为 10 个频带；保留能量高于「最大频带能量 − 50dB」的频带（N_sel 个），'
+    formula(doc, r'\mathrm{ADI}=-\frac{\sum_{i} p_{i}\ln p_{i}}{\ln N_{sel}}')
+    para(doc, '将 0–11kHz 均分为 10 个频带；保留能量高于「最大频带能量 − 50dB」的频带（共 N_sel 个），'
               '对归一化能量 p_i 计算 Shannon 熵并除以 ln(N_sel) 归一化，∈[0,1]。')
-
     h2(doc, '5.4 H —— 声学熵（Sueur et al., 2008）')
-    formula(doc, 'H = H_t × H_f ,   H_t = −Σ p_t ln p_t / ln N_t ,   H_f = −Σ p_f ln p_f / ln N_f')
+    formula(doc, r'H=H_{t}\cdot H_{f},\quad H_{t}=-\frac{\sum p_{t}\ln p_{t}}{\ln N_{t}},\quad H_{f}=-\frac{\sum p_{f}\ln p_{f}}{\ln N_{f}}')
     para(doc, '时间熵 H_t：10ms 短时 RMS 包络归一化后取 Shannon 熵；频谱熵 H_f：平均幅度谱归一化后取 Shannon 熵。'
               '乘积 ∈[0,1]，越接近 1 表示各声源分布越均衡。')
-
     h2(doc, '5.5 频带功率')
-    formula(doc, 'E(f1,f2) = Σ_{f∈[f1,f2]} Σ_t |X(t,f)|²')
+    formula(doc, r'E(f_1,f_2)=\sum_{f\in[f_1,f_2]}\sum_{t}\left|X(t,f)\right|^{2}')
     para(doc, '作为 NDSI、ADI、噪声估计共用的基础量。')
 
     # ============ 六、噪声 ============
     h1(doc, '六、人为噪声占比估计')
-    formula(doc, 'noise% = [ 0.65 × E_anthro/(E_anthro+E_bio) + 0.35 × (1 − activity) ] × 100%')
+    formula(doc, r'\mathrm{noise}=\left[\,0.65\,\frac{E_{anthro}}{E_{anthro}+E_{bio}}+0.35\,\left(1-\mathrm{activity}\right)\right]\times 100\%')
     para(doc, '双信号融合：① 频谱比（1–2kHz 人为声带 vs 2–11kHz 生物声带的能量占比）；'
               '② 鸟声活动度（有鸟声 → 噪声低）。兼顾物理声谱与语义证据。')
 
@@ -249,19 +153,18 @@ def build():
     doc.add_page_break()
     h1(doc, '七、宜居度耦合模型')
     para(doc, '宜居度（0–100）由生物多样性维度 bio 与声环境质量维度 sound 加权合成：')
-    formula(doc, 'score = 0.55 × bio + 0.45 × sound')
+    formula(doc, r'\mathrm{score}=0.55\,\mathrm{bio}+0.45\,\mathrm{sound}')
     h2(doc, '7.1 生物多样性维度 bio')
-    formula(doc, 'bio = 18 + 16·ln(1 + n_sp) + 22·ADI + 7·conf̄ + 3·activity − 0.12·noise')
+    formula(doc, r'\mathrm{bio}=18+16\,\ln(1+n_{sp})+22\,\mathrm{ADI}+7\,\overline{conf}+3\,\mathrm{activity}-0.12\,\mathrm{noise}')
     para(doc, 'n_sp：识别物种数（对数饱和）；ADI：声学多样性；conf̄：物种平均置信度；'
-              'activity：鸟声活动度；noise：噪声占比（噪声掩蔽鸟声、压缩栖息空间，线性折减）。'
-              '截断至 [0,100]。')
+              'activity：鸟声活动度；noise：噪声占比（噪声掩蔽鸟声、压缩栖息空间，线性折减）。截断至 [0,100]。')
     h2(doc, '7.2 声环境质量维度 sound')
-    formula(doc, 'sound = 10 + 30·(NDSI+1)/2 + 22·H + 18·(1 − noise/100)')
+    formula(doc, r'\mathrm{sound}=10+30\,\frac{\mathrm{NDSI}+1}{2}+22\,H+18\,\left(1-\frac{\mathrm{noise}}{100}\right)')
     para(doc, 'NDSI（归一化声景）、H（声学熵）、noise（噪声）三项耦合，截断至 [0,100]。')
     h2(doc, '7.3 等级阈值')
-    formula(doc, 'score ≥ 70 → 宜居(Good)；50 ≤ score < 70 → 一般(Moderate)；score < 50 → 受压(Stressed)')
+    para(doc, 'score ≥ 70 → 宜居（Good）；50 ≤ score < 70 → 一般（Moderate）；score < 50 → 受压（Stressed）。')
     h2(doc, '7.4 置信度合成')
-    formula(doc, 'confidence = 0.35·activity + 0.30·conf̄ + 0.20·min(1, n_sp/3) + 0.15·min(1, dur/30)')
+    formula(doc, r'\mathrm{confidence}=0.35\,\mathrm{activity}+0.30\,\overline{conf}+0.20\,\min\!\left(1,\frac{n_{sp}}{3}\right)+0.15\,\min\!\left(1,\frac{dur}{30}\right)')
     para(doc, '四路输入：鸟声活动度、识别平均置信度、物种证据充分度（3 种封顶）、采样时长充分度（30s 封顶）。'
               '置信度标签：≥0.6 高 / ≥0.4 中 / <0.4 低。')
 
@@ -275,16 +178,16 @@ def build():
     doc.add_page_break()
     h1(doc, '九、公共地图系统')
     h2(doc, '9.1 聚合键 cluster_key')
-    formula(doc, 'cluster_key = region_name | grid_hash(lat, lng)')
+    formula(doc, r'\mathrm{cluster\_key}=\mathrm{region\_name}\mid \mathrm{grid\_hash}(lat,\,lng)')
     para(doc, '同一地区名 + 相近坐标（网格哈希）的记录自动聚合成一个聚合点；'
               '同点多次采样保留为多条样本（支持趋势分析）。')
     h2(doc, '9.2 加权聚合')
-    formula(doc, 'score = Σ(score_i × max(conf_i, ε)) / Σ max(conf_i, ε) ,   ε = 0.01')
+    formula(doc, r'\mathrm{score}=\frac{\sum_{i}\mathrm{score}_{i}\cdot\max(\mathrm{conf}_{i},\,\varepsilon)}{\sum_{i}\max(\mathrm{conf}_{i},\,\varepsilon)},\quad \varepsilon=0.01')
     para(doc, '以置信度为权重的加权宜居度均值（低置信度记录权重被压缩）；'
               'confidenceAvg 为算术均值；scoreMin/scoreMax 取样本极值；n 为样本数。')
     h2(doc, '9.3 确定性坐标模糊（隐私）')
-    formula(doc, 'Δ = sha256(key) 前 8 字节 → 两个 [0,1) 随机数 r1, r2')
-    formula(doc, 'lat′ = lat + (r1 − 0.5)·2·JITTER ,   lng′ = lng + (r2 − 0.5)·2·JITTER ,   JITTER ≈ ±250m')
+    formula(doc, r'\Delta=\mathrm{sha256}(\mathrm{key})[0:8]\Rightarrow r_{1},r_{2}\in[0,1)')
+    formula(doc, r"lat'=lat+(r_{1}-0.5)\cdot 2J,\quad lng'=lng+(r_{2}-0.5)\cdot 2J,\quad J\approx \pm250m")
     para(doc, '同一 key 每次结果一致（刷新不抖动）；模糊量 ≤ ±250m，精确采样位置不可逆。')
     h2(doc, '9.4 隐私设计清单')
     bullet(doc, '公共接口不返回精确坐标（仅模糊后 lat/lng）与用户 ID；')
@@ -350,14 +253,14 @@ def build():
 
     # ============ 十六、测试 ============
     h1(doc, '十六、测试与质量保障')
-    kv_table(doc,
-             ['层级', '工具', '规模', '覆盖'],
-             [['后端单元/集成', 'pytest + FastAPI TestClient', '124 用例全绿', '识别、指数、宜居度、聚合、隐私、统计、同步、鉴权'],
-              ['前端单元', 'node --test', '347 用例全绿', 'reducer、契约、联动、导出、本地化'],
-              ['数据契约', 'dataContract.test.js', '守护字段结构', 'mock 与真实 API 口径一致'],
-              ['算法校准', 'test_indices.py', '锚点回归', '好/差样地评分区间'],
-              ['E2E 验证', 'curl + 公网实测', '部署后', 'indices/tiles/login/clusters/export 全通']],
-             widths=[3.0, 3.6, 2.4, 3.4])
+    three_line_table(doc,
+                     ['层级', '工具', '规模', '覆盖'],
+                     [['后端单元/集成', 'pytest + FastAPI TestClient', '124 用例全绿', '识别、指数、宜居度、聚合、隐私、统计、同步、鉴权'],
+                      ['前端单元', 'node --test', '347 用例全绿', 'reducer、契约、联动、导出、本地化'],
+                      ['数据契约', 'dataContract.test.js', '守护字段结构', 'mock 与真实 API 口径一致'],
+                      ['算法校准', 'test_indices.py', '锚点回归', '好/差样地评分区间'],
+                      ['E2E 验证', 'curl + 公网实测', '部署后', 'indices/tiles/login/clusters/export 全通']],
+                     widths=[3.0, 3.6, 2.4, 3.4])
 
     # ============ 十七、参考文献 ============
     doc.add_page_break()
@@ -369,13 +272,13 @@ def build():
         'Sueur, J., Pavoine, S., Hamerlynck, O., Duvail, S. (2008). Rapid acoustic survey for biodiversity appraisal. PLoS ONE, 3(12), e4065.',
         'Kahl, S., Wood, C.M., Eibl, M., Klinck, H. (2021). BirdNET: A deep learning solution for avian diversity monitoring. Ecological Informatics, 61, 101236.',
         'Klinck, H., Kahl, S. (2023). BirdNET V2.4 model & documentation (TFLite). Cornell Lab of Ornithology / Chemnitz University of Technology.',
-        "Pijanowski, B.C., et al. (2011). Soundscape ecology: The science of sound in the landscape. BioScience, 61(3), 203-216.",
+        'Pijanowski, B.C., et al. (2011). Soundscape ecology: The science of sound in the landscape. BioScience, 61(3), 203-216.',
     ]
     for i, ref in enumerate(refs, 1):
-        para(doc, f'[{i}] {ref}', indent=0.3)
+        para(doc, f'[{i}] {ref}', indent=0)
 
     doc.save('F:/Desktop/linjianhuixiang-prototype/docs/《林间回响》技术设计说明书.docx')
-    print('设计说明书已生成')
+    print('设计说明书已生成（论文风 + 数学公式）')
 
 
 if __name__ == '__main__':
