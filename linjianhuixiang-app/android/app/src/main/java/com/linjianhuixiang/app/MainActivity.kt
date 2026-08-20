@@ -142,21 +142,11 @@ class MainActivity : AppCompatActivity() {
         settings.cacheMode = WebSettings.LOAD_DEFAULT
 
         webView.webViewClient = object : WebViewClient() {
-            // 外链拦截：App 内任何 http/https 页面跳转一律交给系统浏览器
-            // （file:// 内部资源继续在 WebView 加载；避免公共地图在 WebView 内嵌套/白屏）
+            // 外链统一在 WebView 内嵌加载（与微信同内核，绕开系统浏览器对部分域名的拦截）：
+            // 公共地图等外部 https 页面直接在 App 内打开，返回键 canGoBack 回到 App。
+            // 不再跳系统浏览器——国内手机默认浏览器对未备案/部分第三方域名有拦截，跳出去反而打不开。
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "open external failed: ${e.message}", e)
-                    }
-                    return true
-                }
-                return false
+                return false // false = WebView 自己加载（内嵌），不转交系统浏览器
             }
 
             override fun onReceivedError(
