@@ -5,8 +5,8 @@
  * 无桥环境降级：新窗口打开 → 当前页跳转。
  */
 
-/** 公共地图网页（CloudStudio 独立托管） */
-export const PUBLIC_MAP_URL = 'https://9b6e1c8c9443446abd1f865dcc782ebb.app.workbuddy.link';
+/** 公共地图网页（阿里云 nginx 自托管，与后端同域 https://caurmosi.top） */
+export const PUBLIC_MAP_URL = 'https://caurmosi.top';
 
 /**
  * 打开外部 URL。
