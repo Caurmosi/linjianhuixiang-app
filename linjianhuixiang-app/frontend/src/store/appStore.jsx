@@ -16,7 +16,7 @@
  *  - 所有 history/regions 变更由 AppProvider effect 持久化到 localStore（mock 模式不碰）；
  *  - 登录态：user（{username}|null）+ guest（游客跳过），由 App 门控渲染 LoginScreen。
  */
-import { createContext, useContext, useEffect, useReducer } from 'react';
+import { createContext, useContext, useEffect, useReducer, useRef } from 'react';
 import { getHistory, isMockMode, migrateCloudData } from '../data/repository';
 import { loadHistory, loadRegions, saveBatches, saveHistory, saveRegions } from '../utils/localStore';
 import { getUsername, isLoggedIn } from '../services/authService';
@@ -41,9 +41,9 @@ const initialState = {
   // history 懒加载：mock 模式直接取演示数据（无网络）；api 模式启动时从 localStore 读取，
   // 首次进入历史页仍会重新拉取（SET_HISTORY 写入），启动路径 0 网络请求
   history: isMockMode() ? getHistory() : loadHistory(),
-  // 地区记录：进入地图页时加载（SET_REGIONS 写入）；mock 模式也从内存态仓库取数。
-  // v2 真实 API 模式：挂载时由 AppProvider 从 localStore 水合（保持字面量 [] 兼容既有静态契约测试）
-  regions: [],
+  // 地区记录：mock 模式空数组（演示数据由仓库内存提供）；真实 API 模式直接从 localStore 水合，
+  // 避免「启动时初始 [] 覆盖本地已存地区记录」的丢失问题（与 history 同源策略）。
+  regions: isMockMode() ? [] : loadRegions(),
   // 地区详情页当前查看的地区名（RegionScreen 按名称归组过滤）
   activeRegionName: null,
   threshold: 0.5, // 置信度阈值（0.30 - 0.90）
@@ -231,8 +231,15 @@ export function AppProvider({ children }) {
 
   // v2 数据本地化：真实 API 模式下 history/regions 变更后持久化到 localStore
   // （mock 模式不碰 localStore，行为不变；历史/地区删除等均经 SET_HISTORY/SET_REGIONS 回写）
+  // 注意：首次渲染跳过持久化——initialState.regions 已从 localStore 水合，
+  //       若首次就 saveRegions(state.regions) 会用空/旧数组覆盖本地数据（启动丢地区记录的根因）。
+  const skipFirstPersist = useRef(true);
   useEffect(() => {
     if (isMockMode()) return undefined;
+    if (skipFirstPersist.current) {
+      skipFirstPersist.current = false;
+      return undefined;
+    }
     saveHistory(state.history);
     saveRegions(state.regions);
     saveBatches(state.batchResults);

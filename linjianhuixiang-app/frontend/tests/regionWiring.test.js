@@ -62,7 +62,7 @@ describe('B. 地区记录：保存 / 列表 / 详情 / 趋势', () => {
   });
 
   test('appStore：regions 状态 + SET_REGIONS + OPEN_REGION（携带地区名）', () => {
-    assert.match(store, /regions: \[\]/, '初始为空数组');
+    assert.match(store, /regions: isMockMode\(\) \? \[\] : loadRegions\(\)/, '真实 API 模式从 localStore 水合（启动不覆盖本地地区记录）');
     assert.match(store, /case 'SET_REGIONS'/);
     assert.match(store, /case 'OPEN_REGION'/);
     assert.match(store, /activeRegionName/, '存储当前查看地区名');
