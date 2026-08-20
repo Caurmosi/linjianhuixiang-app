@@ -30,3 +30,7 @@ Thumbs.db
 
 # WorkBuddy 内部文件
 .workbuddy/
+
+# Python 缓存
+__pycache__/
+*.pyc
