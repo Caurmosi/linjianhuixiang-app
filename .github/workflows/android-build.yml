@@ -3,6 +3,11 @@ name: Build Android APK
 on:
   push:
     branches: [main]
+    # 只在 App 源码 / Android 配置 / CI 自身变化时触发；
+    # docs（Word 生成脚本）、后端改动不触发 Android 构建（节省 CI 资源）。
+    paths:
+      - 'linjianhuixiang-app/**'
+      - '.github/workflows/android-build.yml'
   workflow_dispatch: {}
 
 jobs:
