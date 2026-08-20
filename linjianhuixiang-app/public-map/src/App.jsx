@@ -21,6 +21,7 @@ import ReportPanel from './panels/ReportPanel.jsx';
 import TrendPanel from './panels/TrendPanel.jsx';
 import Top10Panel from './panels/Top10Panel.jsx';
 import StatsPanel from './panels/StatsPanel.jsx';
+import { downloadCsv, toCsv } from './utils/csv.js';
 
 /* ===================== 常量 ===================== */
 
@@ -457,6 +458,14 @@ export default function App() {
   const [delErr, setDelErr] = useState('');
   const [delBusy, setDelBusy] = useState(false);
   const [toastMsg, setToastMsg] = useState(null); // 顶部轻提示
+  const toastTimerRef = useRef(null); // toast 自动消失计时器
+
+  /** 顶部轻提示：3 秒自动消失 */
+  const flashToast = useCallback((msg) => {
+    setToastMsg(msg);
+    window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToastMsg(null), 3000);
+  }, []);
 
   // 分析功能面板（图鉴 / 对比 / 趋势 / 生态简报）
   const [showBirds, setShowBirds] = useState(false);
@@ -898,6 +907,55 @@ export default function App() {
     }
   };
 
+  /* ---------- 导出 CSV（当前筛选下的全量聚合点，供 Excel / MATLAB 分析） ---------- */
+
+  const [exportBusy, setExportBusy] = useState(false);
+
+  /** 导出当前筛选结果为 CSV：调全量接口（limit 500，忽略地图视口）→ 序列化 → 下载 */
+  const onExportCsv = async () => {
+    if (exportBusy) return;
+    setExportBusy(true);
+    try {
+      const f = filtersRef.current;
+      const params = new URLSearchParams({ limit: '500' });
+      if ((f.region || '').trim()) params.set('region', f.region.trim());
+      if ((f.species || '').trim()) params.set('species', f.species.trim());
+      if (f.minScore !== '') params.set('minScore', String(Number(f.minScore)));
+      if (f.maxScore !== '') params.set('maxScore', String(Number(f.maxScore)));
+      if (f.range === '7d') params.set('from', daysAgoIso(7));
+      else if (f.range === '30d') params.set('from', daysAgoIso(30));
+      const res = await fetch(`${API_BASE}/api/public/clusters?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const clusters = Array.isArray(data.clusters) ? data.clusters : [];
+      if (!clusters.length) {
+        flashToast('当前筛选下没有可导出的数据');
+        return;
+      }
+      // 表头用英文（MATLAB 列名友好）；地区名/日期为中文值
+      const columns = [
+        { key: 'regionName', label: 'regionName' },
+        { key: 'score', label: 'score' },
+        { key: 'scoreMin', label: 'scoreMin' },
+        { key: 'scoreMax', label: 'scoreMax' },
+        { key: 'n', label: 'n' },
+        { key: 'confidenceAvg', label: 'confidenceAvg' },
+        { key: 'lat', label: 'lat' },
+        { key: 'lng', label: 'lng' },
+        { key: 'createdFrom', label: 'createdFrom' },
+        { key: 'createdTo', label: 'createdTo' },
+      ];
+      const csv = toCsv(clusters, columns);
+      const date = new Date().toISOString().slice(0, 10);
+      downloadCsv(`linjianhuixiang_clusters_${date}.csv`, csv);
+      flashToast(`已导出 ${clusters.length} 个地区（含当前筛选）`);
+    } catch (e) {
+      flashToast('导出失败：' + ((e && e.message) || '网络异常'));
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
   /** Top10 点击 → 地图飞过去 + 重拉视野 */
   const onPickTop = useCallback(
     (place) => {
@@ -1195,6 +1253,15 @@ export default function App() {
         </button>
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={clearFilters}>
           清除
+        </button>
+        <button
+          type="button"
+          className="ljx-btn ljx-btn-ghost"
+          onClick={onExportCsv}
+          disabled={exportBusy}
+          title="导出当前筛选结果为 CSV（Excel 可直接打开，MATLAB readtable 可读取）"
+        >
+          {exportBusy ? '导出中…' : '⬇️ 导出 CSV'}
         </button>
         <span className="ljx-filter-sep" />
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowCompare(true)}>
