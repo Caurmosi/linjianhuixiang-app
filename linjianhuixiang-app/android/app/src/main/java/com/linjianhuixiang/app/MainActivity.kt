@@ -2,6 +2,7 @@ package com.linjianhuixiang.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -139,8 +140,6 @@ class MainActivity : AppCompatActivity() {
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
-        // 支持 H5 window.open（配合 onCreateWindow 把新窗口交给系统浏览器）
-        settings.setSupportMultipleWindows(true)
 
         webView.webViewClient = object : WebViewClient() {
             // 外链拦截：App 内任何 http/https 页面跳转一律交给系统浏览器
@@ -179,25 +178,6 @@ class MainActivity : AppCompatActivity() {
         // WebChromeClient：覆写 onShowFileChooser 以支持 H5 <input type="file">
         // （默认实现直接返回 false，导致 WebView 忽略文件选择，导入音频无响应）。
         webView.webChromeClient = object : WebChromeClient() {
-            // H5 window.open 降级路径：新窗口一律交给系统浏览器（不创建内部 WebView 窗口）
-            override fun onCreateWindow(
-                view: WebView?,
-                isDialog: Boolean,
-                isUserGesture: Boolean,
-                resultMsg: android.os.Message?
-            ): Boolean {
-                val url = resultMsg?.obj as? WebView.WebViewTransport ?: return false
-                val href = url?.url?.url?.toString() ?: return false
-                try {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(href))
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "onCreateWindow open failed: ${e.message}", e)
-                }
-                return true
-            }
-
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
