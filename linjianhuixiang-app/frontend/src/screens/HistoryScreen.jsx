@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
+import ConfirmModal from '../components/ConfirmModal';
 import SharePreview from '../components/SharePreview';
 import { analysisForHistory, buildMockAnalysis, deleteHistory, getHistory } from '../data/repository';
 import { formatISODate } from '../utils/dates';
@@ -115,21 +116,40 @@ export default function HistoryScreen() {
   const selectedItems = items.filter((h) => selected.has(h.id));
 
   /** 批量删除（多选）：确认后逐条删除 */
-  const bulkDelete = async () => {
+  // 批量删除：自定义弹窗（confirm → running 进度 → done 摘要），替代 window.confirm
+  const [delModal, setDelModal] = useState(false);
+  const [delState, setDelState] = useState('confirm');
+  const [delProg, setDelProg] = useState({ done: 0, total: 0, failed: 0 });
+  const startBulkDelete = () => {
     if (!selectedItems.length) return;
-    if (!window.confirm(`确定删除选中的 ${selectedItems.length} 条历史记录吗？`)) return;
-    let ok = 0;
-    for (const item of selectedItems) {
+    setDelProg({ done: 0, total: selectedItems.length, failed: 0 });
+    setDelState('confirm');
+    setDelModal(true);
+  };
+  const runBulkDelete = async () => {
+    setDelState('running');
+    const list = items.filter((h) => selected.has(h.id));
+    const total = list.length;
+    let done = 0;
+    let failed = 0;
+    setDelProg({ done: 0, total, failed: 0 });
+    for (const it of list) {
       try {
-        await Promise.resolve(deleteHistory(item.id));
-        ok += 1;
+        await Promise.resolve(deleteHistory(it.id));
       } catch (e) {
-        /* 单条失败继续 */
+        failed += 1;
       }
+      done += 1;
+      setDelProg({ done, total, failed });
     }
     dispatch({ type: 'SET_HISTORY', items: items.filter((h) => !selected.has(h.id)) });
-    dispatch({ type: 'TOAST', message: `已删除 ${ok} 条历史记录` });
-    exitSelect();
+    dispatch({ type: 'TOAST', message: `已删除 ${total - failed} 条历史记录${failed ? `（失败 ${failed}）` : ''}` });
+    setDelState('done');
+  };
+  const closeDelModal = () => {
+    if (delState === 'running') return; // 运行中禁止关闭
+    setDelModal(false);
+    if (delState === 'done') exitSelect();
   };
 
   /** 批量分享：逐条生成分享卡片 → 预览 */
@@ -270,7 +290,7 @@ export default function HistoryScreen() {
             {sharing ? '生成中…' : `分享（${selected.size}）`}
             <IconShare size={15} />
           </button>
-          <button className="hist-bulk-btn hist-bulk-del" onClick={bulkDelete} disabled={!selected.size}>
+          <button className="hist-bulk-btn hist-bulk-del" onClick={startBulkDelete} disabled={!selected.size}>
             删除（{selected.size}）
           </button>
         </div>
@@ -278,6 +298,22 @@ export default function HistoryScreen() {
 
       {/* 分享卡片预览 */}
       {cards && <SharePreview cards={cards} onClose={() => setCards(null)} />}
+
+      {/* 自定义删除弹窗（确认 → 进度 → 摘要） */}
+      <ConfirmModal
+        open={delModal}
+        state={delState}
+        progress={delProg}
+        title="删除历史记录"
+        description={`确定删除选中的 ${delProg.total} 条历史记录吗？此操作不可撤销。`}
+        confirmText="确认删除"
+        cancelText="取消"
+        doneText="知道了"
+        danger
+        onConfirm={runBulkDelete}
+        onCancel={closeDelModal}
+        onClose={closeDelModal}
+      />
     </div>
   );
 }

@@ -187,7 +187,7 @@ describe('首页瘦身（历史记录移入底部 Tab）', () => {
     assert.match(history, /选择/);
     assert.match(history, /全选/);
     assert.match(history, /bulkShare/);
-    assert.match(history, /bulkDelete/);
+    assert.match(history, /startBulkDelete/);
   });
 
   test('结果页右上角分享 → 分享卡片（drawShareCard + SharePreview）', () => {
