@@ -488,3 +488,24 @@ def test_cluster_detail_samples_include_species(client):
     cid2 = r2.json()["clusters"][0]["id"]
     d2 = client.get(f"/api/public/clusters/{cid2}").json()
     assert d2["samples"][0]["species"] == []
+
+
+def test_cluster_detail_samples_include_bio_sound_species(client):
+    """detail samples 携带 bio/sound/species（App 上传 summary 全维度体现）。"""
+    t = _register(client, "全维甲", "secret123")
+    _upload(client, t, regionName="全维园", lat=30.2, lng=120.1, score=62,
+            summary={"livability": {"score": 62, "bio": 74, "sound": 58, "noise": 41},
+                     "species": [{"name": "麻雀", "conf": 0.9}, {"name": "乌鸫", "conf": 0.8}]})
+    d = client.get("/api/public/clusters?region=%E5%85%A8%E7%BB%B4%E5%9B%AD").json()
+    cid = d["clusters"][0]["id"]
+    s = client.get(f"/api/public/clusters/{cid}").json()["samples"][0]
+    assert s["bio"] == 74.0 and s["sound"] == 58.0
+    assert s["species"] == ["麻雀", "乌鸫"]
+
+    # 缺失 livability → None 不报错
+    t2 = _register(client, "全维乙", "secret123")
+    _upload(client, t2, regionName="缺维园", lat=30.3, lng=120.2, score=55)
+    d2 = client.get("/api/public/clusters?region=%E7%BC%BA%E7%BB%B4%E5%9B%AD").json()
+    cid2 = d2["clusters"][0]["id"]
+    s2 = client.get(f"/api/public/clusters/{cid2}").json()["samples"][0]
+    assert s2["bio"] is None and s2["sound"] is None and s2["species"] == []

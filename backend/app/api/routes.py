@@ -731,6 +731,15 @@ def _sample_species(row: dict) -> list[str]:
     return out
 
 
+def _liv_val(row: dict, key: str) -> float | None:
+    """从行内 summary.livability 取 bio/sound 等指标；缺失返回 None。"""
+    try:
+        v = (row.get("summary") or {}).get("livability", {}).get(key)
+        return round(float(v), 1) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 @router.get(
     "/api/public/clusters/{cluster_key}",
     response_model=schemas.ClusterDetailResponse,
@@ -754,6 +763,8 @@ def get_public_cluster_detail(
             "score": r["score"],
             "confidence": r["confidence"],
             "noise": privacy_mod.noise_of(r),
+            "bio": _liv_val(r, "bio"),
+            "sound": _liv_val(r, "sound"),
             "species": _sample_species(r),
         }
         for r in matched

@@ -989,6 +989,8 @@ export default function App() {
             score: s.score,
             confidence: s.confidence,
             noise: s.noise == null ? '' : s.noise,
+            bio: s.bio == null ? '' : s.bio,
+            sound: s.sound == null ? '' : s.sound,
             species: Array.isArray(s.species) && s.species.length ? s.species.join('、') : '',
           });
         }
@@ -1004,6 +1006,8 @@ export default function App() {
         { key: 'score', label: 'score' },
         { key: 'confidence', label: 'confidence' },
         { key: 'noise', label: 'noise' },
+        { key: 'bio', label: 'bio' },
+        { key: 'sound', label: 'sound' },
         { key: 'species', label: 'species' },
       ];
       const csv = toCsv(rows, columns);
