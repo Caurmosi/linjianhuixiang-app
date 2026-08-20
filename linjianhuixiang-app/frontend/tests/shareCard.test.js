@@ -12,8 +12,8 @@ describe('gradeColor 等级色', () => {
     assert.equal(gradeColor(85), '#2e7d52');
     assert.equal(gradeColor(50), '#d49a26');
     assert.equal(gradeColor(64), '#d49a26');
-    assert.equal(gradeColor(49), '#c25a39');
-    assert.equal(gradeColor(0), '#c25a39');
+    assert.equal(gradeColor(49), '#c0392b');
+    assert.equal(gradeColor(0), '#c0392b');
   });
 });
 

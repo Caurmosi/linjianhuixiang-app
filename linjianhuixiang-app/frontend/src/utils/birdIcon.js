@@ -56,104 +56,106 @@ export function drawBirdIcon(ctx, { cx, cy, scale = 1, name = '鸟' }) {
   const S = (v) => v * s;
 
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
+  try {
+    ctx.translate(cx, cy);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
 
-  // 腿
-  ctx.beginPath();
-  ctx.strokeStyle = css(leg);
-  ctx.lineWidth = S(2.5);
-  ctx.moveTo(S(-5), S(14));
-  ctx.lineTo(S(-7), S(28));
-  ctx.moveTo(S(7), S(14));
-  ctx.lineTo(S(9), S(28));
-  ctx.stroke();
+    // 腿
+    ctx.beginPath();
+    ctx.strokeStyle = css(leg);
+    ctx.lineWidth = S(2.5);
+    ctx.moveTo(S(-5), S(14));
+    ctx.lineTo(S(-7), S(28));
+    ctx.moveTo(S(7), S(14));
+    ctx.lineTo(S(9), S(28));
+    ctx.stroke();
 
-  // 尾羽
-  const tailLen = traits.longTail ? S(40) : S(20);
-  ctx.beginPath();
-  ctx.fillStyle = css(dark);
-  ctx.moveTo(S(-14), S(4));
-  ctx.quadraticCurveTo(S(-16 - tailLen * 0.55), S(-2), S(-16 - tailLen), S(10));
-  ctx.quadraticCurveTo(S(-16 - tailLen * 0.6), S(18), S(-12), S(14));
-  ctx.closePath();
-  ctx.fill();
-  ctx.lineWidth = S(1.5);
-  ctx.strokeStyle = css(dark);
-  ctx.stroke();
-
-  // 身体
-  const bodyW = traits.slaty ? S(24) : S(20);
-  const bodyH = traits.slaty ? S(20) | 0 : S(24);
-  ellipsePath(ctx, 0, 0, bodyW, bodyH);
-  ctx.fillStyle = css(main);
-  ctx.fill();
-  ctx.lineWidth = S(1.5);
-  ctx.strokeStyle = css(dark);
-  ctx.stroke();
-
-  // 腹部（浅色，覆盖在身体下半部分）
-  ellipsePath(ctx, S(3), S(5), S(bodyW * 0.55), S(bodyH * 0.55));
-  ctx.fillStyle = css(light);
-  ctx.fill();
-
-  // 翅膀
-  ctx.beginPath();
-  ctx.fillStyle = css(dark);
-  ctx.moveTo(S(-7), S(-5));
-  ctx.quadraticCurveTo(S(-16), S(0), S(-9), S(10));
-  ctx.quadraticCurveTo(S(-3), S(7), S(-7), S(-5));
-  ctx.closePath();
-  ctx.fill();
-  ctx.lineWidth = S(1.4);
-  ctx.stroke();
-
-  // 头
-  const headR = S(10);
-  ctx.beginPath();
-  ctx.arc(S(15), S(-13), headR, 0, Math.PI * 2);
-  ctx.fillStyle = css(main);
-  ctx.fill();
-  ctx.lineWidth = S(1.4);
-  ctx.stroke();
-
-  // 羽冠
-  if (traits.crest) {
+    // 尾羽
+    const tailLen = traits.longTail ? S(40) : S(20);
     ctx.beginPath();
     ctx.fillStyle = css(dark);
-    ctx.moveTo(S(13), S(-22));
-    ctx.quadraticCurveTo(S(18), S(-34), S(25), S(-28));
-    ctx.quadraticCurveTo(S(23), S(-22), S(20), S(-20));
+    ctx.moveTo(S(-14), S(4));
+    ctx.quadraticCurveTo(S(-16 - tailLen * 0.55), S(-2), S(-16 - tailLen), S(10));
+    ctx.quadraticCurveTo(S(-16 - tailLen * 0.6), S(18), S(-12), S(14));
     ctx.closePath();
     ctx.fill();
-    ctx.lineWidth = S(1.3);
+    ctx.lineWidth = S(1.5);
+    ctx.strokeStyle = css(dark);
     ctx.stroke();
+
+    // 身体
+    const bodyW = traits.slaty ? S(24) : S(20);
+    const bodyH = traits.slaty ? S(20) | 0 : S(24);
+    ellipsePath(ctx, 0, 0, bodyW, bodyH);
+    ctx.fillStyle = css(main);
+    ctx.fill();
+    ctx.lineWidth = S(1.5);
+    ctx.strokeStyle = css(dark);
+    ctx.stroke();
+
+    // 腹部（浅色，覆盖在身体下半部分）
+    ellipsePath(ctx, S(3), S(5), S(bodyW * 0.55), S(bodyH * 0.55));
+    ctx.fillStyle = css(light);
+    ctx.fill();
+
+    // 翅膀
+    ctx.beginPath();
+    ctx.fillStyle = css(dark);
+    ctx.moveTo(S(-7), S(-5));
+    ctx.quadraticCurveTo(S(-16), S(0), S(-9), S(10));
+    ctx.quadraticCurveTo(S(-3), S(7), S(-7), S(-5));
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = S(1.4);
+    ctx.stroke();
+
+    // 头
+    const headR = S(10);
+    ctx.beginPath();
+    ctx.arc(S(15), S(-13), headR, 0, Math.PI * 2);
+    ctx.fillStyle = css(main);
+    ctx.fill();
+    ctx.lineWidth = S(1.4);
+    ctx.stroke();
+
+    // 羽冠
+    if (traits.crest) {
+      ctx.beginPath();
+      ctx.fillStyle = css(dark);
+      ctx.moveTo(S(13), S(-22));
+      ctx.quadraticCurveTo(S(18), S(-34), S(25), S(-28));
+      ctx.quadraticCurveTo(S(23), S(-22), S(20), S(-20));
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = S(1.3);
+      ctx.stroke();
+    }
+
+    // 喙
+    const beakLen = traits.longBeak ? S(13) : S(8);
+    ctx.beginPath();
+    ctx.fillStyle = css(beak);
+    ctx.moveTo(S(23), S(-15));
+    ctx.lineTo(S(23 + beakLen), S(-10));
+    ctx.lineTo(S(23), S(-9));
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = S(1.2);
+    ctx.stroke();
+
+    // 眼
+    ctx.beginPath();
+    ctx.fillStyle = '#ffffff';
+    ctx.arc(S(17), S(-14), S(3), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.fillStyle = '#222';
+    ctx.arc(S(18), S(-14), S(1.6), 0, Math.PI * 2);
+    ctx.fill();
+  } finally {
+    ctx.restore();
   }
-
-  // 喙
-  const beakLen = traits.longBeak ? S(13) : S(8);
-  ctx.beginPath();
-  ctx.fillStyle = css(beak);
-  ctx.moveTo(S(23), S(-15));
-  ctx.lineTo(S(23 + beakLen), S(-10));
-  ctx.lineTo(S(23), S(-9));
-  ctx.closePath();
-  ctx.fill();
-  ctx.lineWidth = S(1.2);
-  ctx.stroke();
-
-  // 眼
-  ctx.beginPath();
-  ctx.fillStyle = '#ffffff';
-  ctx.arc(S(17), S(-14), S(3), 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.fillStyle = '#222';
-  ctx.arc(S(18), S(-14), S(1.6), 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
 }
 
 /** 拍立得/徽章底座 + 鸟（分享卡片用） */
@@ -161,14 +163,19 @@ export function drawBirdBadge(ctx, { x, y, r = 62, name = '鸟' }) {
   const book = BIRD_BOOK.find((b) => b.name === name);
   const bg = book ? hexRgb(book.icon) : [122, 168, 106];
   ctx.save();
-  // 浅色圆底
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.14)`;
-  ctx.fill();
-  ctx.strokeStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.35)`;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  drawBirdIcon(ctx, { cx: x, cy: y + 6, scale: r / 42, name });
-  ctx.restore();
+  try {
+    // 浅色圆底
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.14)`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.35)`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    drawBirdIcon(ctx, { cx: x, cy: y + 6, scale: r / 42, name });
+  } catch (e) {
+    /* 单只鸟失败不阻塞整张卡；finally 仍会 restore */
+  } finally {
+    ctx.restore();
+  }
 }
