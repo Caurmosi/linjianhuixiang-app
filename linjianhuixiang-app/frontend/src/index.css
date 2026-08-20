@@ -2145,3 +2145,79 @@ input[type='range']::-moz-range-thumb {
 .home-tool-ico {
   font-size: 16px;
 }
+
+/* 历史记录增强：星标 / 多选勾选 / 批量操作条 */
+.hist-star {
+  border: none;
+  background: transparent;
+  color: #c3cfc8;
+  padding: 6px 4px;
+  cursor: pointer;
+  flex: none;
+  line-height: 1;
+}
+.hist-star[data-on='true'],
+.hist-star.on {
+  color: #e8a33d;
+}
+.hist-check {
+  width: 26px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.hist-check span {
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid #b9c8c0;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: #fff;
+  background: #fff;
+}
+.hist-check span.on {
+  background: #1b7a4b;
+  border-color: #1b7a4b;
+}
+.hist-bulk {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 20px rgba(18, 45, 30, 0.08);
+}
+.hist-bulk-btn {
+  flex: 1;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.hist-bulk-btn:disabled {
+  opacity: 0.4;
+}
+.hist-bulk-share {
+  background: #1b7a4b;
+  border-color: #1b7a4b;
+  color: #fff;
+}
+.hist-bulk-del {
+  color: #c0392b;
+  border-color: #f0c9c4;
+  background: #fdf3f2;
+}

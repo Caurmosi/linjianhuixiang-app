@@ -204,3 +204,21 @@ describe('reducer 开关与 Toast', () => {
     assert.equal(s.toast, null);
   });
 });
+
+describe('TOGGLE_STARRED 星标切换', () => {
+  test('切换 starred 字段（缺失默认 false → true → false，不影响其他条目）', () => {
+    const s0 = {
+      ...initialState,
+      history: [
+        { id: 1, name: 'A' },
+        { id: 2, name: 'B', starred: true },
+      ],
+    };
+    const s1 = reducer(s0, { type: 'TOGGLE_STARRED', id: 1 });
+    assert.equal(s1.history[0].starred, true, 'id=1 应变为已星标');
+    assert.equal(s1.history[1].starred, true, '不影响其他条目');
+    const s2 = reducer(s1, { type: 'TOGGLE_STARRED', id: 1 });
+    assert.equal(s2.history[0].starred, false, '再切一次应取消星标');
+    assert.notEqual(s0, s1, '应返回新对象');
+  });
+});

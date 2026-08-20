@@ -1,14 +1,16 @@
 /**
  * ResultsScreen.jsx
- * 结果总览：宜居度大卡片 + 统计 + 4 个详情入口
+ * 结果总览：宜居度大卡片 + 统计 + 4 个详情入口；右上角「分享」生成单次录音分享卡片
  */
+import { useState } from 'react';
 import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import Ring from '../components/Ring';
 import Chip from '../components/ui/Chip';
+import SharePreview from '../components/SharePreview';
 import WaveformChart from '../components/charts/WaveformChart';
 import { gradeOf, livabilityDesc } from '../data/repository';
-import { exportReport } from '../utils/exportReport';
+import { drawShareCard } from '../utils/shareCard';
 import { IconShare, IconDoc, IconChart, IconHeat, IconGlobe } from '../components/icons';
 
 /** 置信度档位 → Chip tone（高=绿 / 中=琥珀 / 低=红），贴合设计 token */
@@ -51,9 +53,11 @@ export default function ResultsScreen() {
   const confLabel = conf != null && a.livability.confidenceLabel ? a.livability.confidenceLabel : null;
 
   const go = (screen) => dispatch({ type: 'GO', screen });
-  const share = async () => {
-    const ok = await exportReport(state.analysis);
-    dispatch({ type: 'TOAST', message: ok ? '报告已保存到手机相册' : '保存失败，请重试' });
+  // 分享：生成「单次录音」分享卡片 → 全屏预览（预览后可保存到相册）
+  const [shareCards, setShareCards] = useState(null);
+  const share = () => {
+    const { dataUrl } = drawShareCard(state.analysis);
+    setShareCards([{ dataUrl, title: (state.analysis && state.analysis.recording) || '分享卡片' }]);
   };
 
   const QUICK = [
@@ -131,6 +135,9 @@ export default function ResultsScreen() {
           );
         })}
       </div>
+
+      {/* 分享卡片预览 */}
+      {shareCards && <SharePreview cards={shareCards} onClose={() => setShareCards(null)} />}
     </div>
   );
 }

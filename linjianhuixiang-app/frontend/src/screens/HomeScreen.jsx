@@ -1,16 +1,14 @@
 /**
  * HomeScreen.jsx
- * 首页：实时录音（主卡） / 导入环境录音（多选批量） / 历史记录 / 最近分析 / 一键演示（仅演示模式）
+ * 首页：实时录音（主卡） / 导入环境录音（多选批量） / 工具行（分享/图鉴） / 一键演示（仅演示模式）
  */
 import { useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { useApp } from '../store/appStore.jsx';
-import { analysisForHistory, buildMockAnalysis } from '../data/repository';
-import { humanizeBackendError } from '../utils/errorText';
 import Button from '../components/ui/Button';
 import BirdBookModal from '../components/BirdBookModal';
 import { isMockMode } from '../config/dataConfig.js';
-import { IconLeaf, IconUpload, IconPlay, IconMic, IconClock, IconBird, IconChevronRight, IconInfo, IconMap } from '../components/icons';
+import { IconLeaf, IconUpload, IconPlay, IconMic, IconChevronRight, IconInfo, IconMap } from '../components/icons';
 import { openExternal, PUBLIC_MAP_URL } from '../utils/openExternal.js';
 
 export default function HomeScreen() {
@@ -91,24 +89,6 @@ export default function HomeScreen() {
 
   const onRecord = () => dispatch({ type: 'GO', screen: 'record' });
 
-  const onHistory = () => dispatch({ type: 'GO', screen: 'history' });
-
-  const openRecent = async (item) => {
-    try {
-      // Promise.resolve 归一化 mock 同步 / api 异步两种返回
-      const analysis = await Promise.resolve(analysisForHistory(item));
-      dispatch({ type: 'LOAD_HISTORY', analysis });
-    } catch (err) {
-      const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
-      const demo = buildMockAnalysis(item.name, {
-        speciesCount: item.species,
-        livability: { score: item.score, noise: item.noise ?? 40, bio: item.bio ?? 70, sound: item.sound ?? 55 },
-      });
-      dispatch({ type: 'TOAST', message: `识别失败：${reason}，已用演示结果回放` });
-      dispatch({ type: 'LOAD_HISTORY', analysis: demo });
-    }
-  };
-
   return (
     <div>
       {/* 品牌区 */}
@@ -187,13 +167,6 @@ export default function HomeScreen() {
       </div>
       <input ref={fileRef} type="file" accept="audio/*" multiple className="hidden" onChange={onFileChange} />
 
-      {/* 历史记录 —— 次级按钮行 */}
-      <div className="mb-3.5">
-        <Button variant="ghost" icon={<IconClock size={20} />} onClick={onHistory}>
-          历史记录
-        </Button>
-      </div>
-
       {/* 一键演示（内置样例）：仅演示模式渲染（真实识别模式隐藏） */}
       {mockMode ? (
         <div className="mb-3.5">
@@ -202,25 +175,6 @@ export default function HomeScreen() {
           </Button>
         </div>
       ) : null}
-
-      {/* 最近分析 */}
-      <div className="eyebrow mb-2.5">最近分析</div>
-      {state.history.map((item) => (
-        <div key={item.id} className="recent" onClick={() => openRecent(item)}>
-          <div className="thumb">
-            <IconBird size={22} />
-          </div>
-          <div className="meta">
-            <b>{item.name}</b>
-            <span>
-              {item.species} 种鸟 · 宜居度 {item.score} · {item.duration}
-            </span>
-          </div>
-          <span className="go">
-            <IconChevronRight size={16} />
-          </span>
-        </div>
-      ))}
 
       {/* 方法学卡片 */}
       <div className="method mt-4">

@@ -160,3 +160,48 @@ describe('MapScreen.jsx：多录音综合视图（需求 D）', () => {
     assert.match(map, /MapCanvas/, '综合视图引用 MapCanvas 真实地图');
   });
 });
+
+/* ================= 历史记录改版：首页瘦身 + 导航改名 ================= */
+describe('首页瘦身（历史记录移入底部 Tab）', () => {
+  test('首页已移除「历史记录」按钮行与「最近分析」区块', () => {
+    assert.ok(!home.includes('历史记录'), '首页不应再有历史记录按钮行');
+    assert.ok(!home.includes('最近分析'), '首页不应再有最近分析区块');
+  });
+
+  test('底部导航「结果」Tab 已改名「历史记录」', () => {
+    const nav = read('components/BottomNav.jsx');
+    assert.match(nav, /label: '历史记录'/);
+    assert.ok(!nav.includes("label: '结果'"), '不应再显示「结果」Tab');
+  });
+
+  test('HistoryScreen 支持星标（TOGGLE_STARRED + IconStar + 星标分组）', () => {
+    const history = read('screens/HistoryScreen.jsx');
+    assert.match(store, /case 'TOGGLE_STARRED'/);
+    assert.match(history, /IconStar/);
+    assert.match(history, /starred/);
+    assert.match(history, /⭐ 星标/);
+  });
+
+  test('HistoryScreen 支持多选（选择/全选/批量分享/批量删除）', () => {
+    const history = read('screens/HistoryScreen.jsx');
+    assert.match(history, /选择/);
+    assert.match(history, /全选/);
+    assert.match(history, /bulkShare/);
+    assert.match(history, /bulkDelete/);
+  });
+
+  test('结果页右上角分享 → 分享卡片（drawShareCard + SharePreview）', () => {
+    const results = read('screens/ResultsScreen.jsx');
+    assert.match(results, /SharePreview/);
+    assert.match(results, /drawShareCard/);
+  });
+
+  test('分享卡片绘制：buildShareCardData / 卡通鸟 / 预览保存 均已接线', () => {
+    const card = read('utils/shareCard.js');
+    assert.match(card, /buildShareCardData/);
+    assert.match(card, /drawBirdBadge/);
+    const preview = read('components/SharePreview.jsx');
+    assert.match(preview, /saveCardImage/);
+    assert.match(preview, /全部保存/);
+  });
+});

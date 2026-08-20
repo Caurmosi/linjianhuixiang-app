@@ -162,6 +162,15 @@ function reducer(state, action) {
       // 懒加载写入历史列表（首次进入历史页 fetch 后回填；失败置空数组）
       return { ...state, history: Array.isArray(action.items) ? action.items : [] };
 
+    case 'TOGGLE_STARRED':
+      // 星标切换：history 条目加 starred 字段（旧数据缺失默认 false）
+      return {
+        ...state,
+        history: state.history.map((h) =>
+          h.id === action.id ? { ...h, starred: !h.starred } : h
+        ),
+      };
+
     case 'SET_REGIONS':
       // 写入地区记录列表（进入地图页 / 保存 / 删除 / 重命名后刷新）
       return { ...state, regions: Array.isArray(action.items) ? action.items : [] };
