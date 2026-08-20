@@ -113,24 +113,25 @@ test('START_ANALYSIS: 携带 overrides（样例/实时录音）时存入 analysi
   assert.equal(next.screen, 'analyzing');
 });
 
-test('COMPLETE_ANALYSIS: 写入分析结果并跳转结果页', () => {
-  const analysis = { recording: 'x.wav', speciesCount: 3 };
+test('COMPLETE_ANALYSIS: 写入分析结果并跳转结果页（返回栈指向历史）', () => {
+  const analysis = { recording: 'x.wav', speciesCount: 3, species: [], livability: { score: 60 } };
   const next = reducer(initialState, { type: 'COMPLETE_ANALYSIS', analysis });
   assert.equal(next.analysis, analysis);
   assert.equal(next.recording, 'x.wav');
   assert.equal(next.screen, 'results');
   assert.equal(next.tab, 'results');
-  assert.deepEqual(arr(next.screenStack), []);
+  assert.deepEqual(arr(next.screenStack), ['history'], '返回应回历史记录');
+  assert.equal(next.history.length, initialState.history.length + 1, '本次分析应写入历史');
 });
 
-test('LOAD_HISTORY: 加载历史分析并跳转结果页', () => {
+test('LOAD_HISTORY: 加载历史分析并跳转结果页（返回仍回历史）', () => {
   const analysis = { recording: '西郊森林公园_黄昏.wav', speciesCount: 12 };
   const next = reducer(initialState, { type: 'LOAD_HISTORY', analysis });
   assert.equal(next.analysis, analysis);
   assert.equal(next.recording, '西郊森林公园_黄昏.wav');
   assert.equal(next.screen, 'results');
   assert.equal(next.tab, 'results');
-  assert.deepEqual(arr(next.screenStack), []);
+  assert.deepEqual(arr(next.screenStack), ['history']);
 });
 
 test('TOAST / TOAST_CLEAR: 提示消息设置与清除', () => {

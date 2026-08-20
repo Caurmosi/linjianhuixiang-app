@@ -116,14 +116,31 @@ describe('reducer 分析流程：START / COMPLETE / LOAD_HISTORY', () => {
     assert.deepEqual(next.screenStack, []);
   });
 
-  test('COMPLETE_ANALYSIS 写入分析结果并进入 results', () => {
+  test('COMPLETE_ANALYSIS 写入分析结果、进入 results、返回栈指向历史记录', () => {
     const analysis = buildAnalysis('完成.wav');
     const next = reducer(initialState, { type: 'COMPLETE_ANALYSIS', analysis });
     assert.equal(next.screen, 'results');
     assert.equal(next.tab, 'results');
     assert.equal(next.recording, '完成.wav');
     assert.equal(next.analysis, analysis);
-    assert.deepEqual(next.screenStack, []);
+    // 返回栈指向历史记录：结果页左上角返回 → 历史列表（而非首页）
+    assert.deepEqual(next.screenStack, ['history']);
+    // 本次分析自动写入本地历史（持久化 → 退出不丢）
+    assert.equal(next.history.length, initialState.history.length + 1);
+    const head = next.history[0];
+    assert.equal(head.name, '完成.wav');
+    assert.equal(head.species, analysis.species.length);
+    assert.equal(head.score, analysis.livability.score);
+    assert.ok(head.analysis, 'history 条目应含 analysis 快照（回放用）');
+  });
+
+  test('LOAD_HISTORY 回放历史记录进入 results（返回仍回历史列表）', () => {
+    const analysis = analysisForHistory(HISTORY[0]);
+    const next = reducer(initialState, { type: 'LOAD_HISTORY', analysis });
+    assert.equal(next.screen, 'results');
+    assert.equal(next.recording, HISTORY[0].name);
+    assert.equal(next.analysis.speciesCount, HISTORY[0].species);
+    assert.deepEqual(next.screenStack, ['history']);
   });
 
   test('LOAD_HISTORY 回放历史记录进入 results', () => {

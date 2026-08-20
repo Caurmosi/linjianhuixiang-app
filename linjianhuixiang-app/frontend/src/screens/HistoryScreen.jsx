@@ -33,18 +33,18 @@ export default function HistoryScreen() {
   const [cards, setCards] = useState(null);
   const [sharing, setSharing] = useState(false);
 
-  // 懒加载历史列表：首次进入历史页才发起请求（mock 同步返回；api 后端不可达降级空数组 + Toast）
+  // 懒加载历史列表：首次进入历史页刷新（mock 同步返回演示数据；api 模式读本地 localStore）
+  // 失败时【保留本地已有历史】——分析历史是本地资产，不随账号/网络状态丢失
   useEffect(() => {
     let alive = true;
     Promise.resolve(getHistory())
       .then((list) => {
-        if (alive) dispatch({ type: 'SET_HISTORY', items: Array.isArray(list) ? list : [] });
+        if (alive && Array.isArray(list) && list.length) {
+          dispatch({ type: 'SET_HISTORY', items: list });
+        }
       })
-      .catch((err) => {
-        if (!alive) return;
-        const reason = humanizeBackendError(err && err.message ? err.message : '未知错误');
-        dispatch({ type: 'TOAST', message: `历史记录加载失败：${reason}，暂不可用` });
-        dispatch({ type: 'SET_HISTORY', items: [] });
+      .catch(() => {
+        /* 拉取失败：保留现有本地历史，不清空 */
       });
     return () => {
       alive = false;
@@ -175,7 +175,8 @@ export default function HistoryScreen() {
       <div className="meta">
         <b>{item.name}</b>
         <span>
-          {item.duration} · {item.species} 种鸟 · 宜居度 {item.score}
+          {item.duration ? `${item.duration} · ` : ''}
+          {item.species} 种鸟 · 宜居度 {item.score}
         </span>
         <i className="hist-date">{formatISODate(item.created_at)}</i>
       </div>

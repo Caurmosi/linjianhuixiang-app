@@ -96,18 +96,45 @@ function reducer(state, action) {
         screenStack: [],
       };
 
-    case 'COMPLETE_ANALYSIS':
+    case 'COMPLETE_ANALYSIS': {
+      // 分析完成：进入结果页（tab 高亮「历史记录」）；同时把本次分析写入本地历史
+      // （history 持久化到 localStore → 退出 App/账号后不丢失，符合「本地资产」定位）
+      const a = action.analysis || {};
+      const lv = a.livability || {};
+      const fmtDur = (sec) => {
+        const s = Math.max(0, Math.round(Number(sec) || 0));
+        if (!s) return '';
+        const m = Math.floor(s / 60);
+        const r = s % 60;
+        return m > 0 ? `${m}:${String(r).padStart(2, '0')}` : `${r}s`;
+      };
+      const item = {
+        id: a.id || Date.now(),
+        name: a.recording || '录音分析',
+        species: Array.isArray(a.species) ? a.species.length : 0,
+        score: typeof lv.score === 'number' ? lv.score : 0,
+        duration: a.durationLabel || fmtDur(a.durationSec),
+        noise: typeof lv.noise === 'number' ? lv.noise : null,
+        bio: typeof lv.bio === 'number' ? lv.bio : null,
+        sound: typeof lv.sound === 'number' ? lv.sound : null,
+        created_at: a.createdAt || new Date().toISOString(),
+        analysis: a,
+      };
       return {
         ...state,
-        recording: action.analysis.recording,
-        analysis: action.analysis,
+        recording: a.recording,
+        analysis: a,
         batchSummary: null,
         screen: 'results',
         tab: 'results',
-        screenStack: [],
+        // 返回栈指向历史记录：结果页左上角返回 → 回到历史列表
+        screenStack: ['history'],
+        history: [item, ...state.history].slice(0, 300),
       };
+    }
 
     case 'LOAD_HISTORY':
+      // 历史列表点击回放：返回仍回到历史列表
       return {
         ...state,
         recording: action.analysis.recording,
@@ -115,7 +142,7 @@ function reducer(state, action) {
         batchSummary: null,
         screen: 'results',
         tab: 'results',
-        screenStack: [],
+        screenStack: ['history'],
       };
 
     case 'START_BATCH':

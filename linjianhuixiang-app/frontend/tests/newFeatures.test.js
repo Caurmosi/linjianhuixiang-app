@@ -205,3 +205,22 @@ describe('首页瘦身（历史记录移入底部 Tab）', () => {
     assert.match(preview, /全部保存/);
   });
 });
+
+/* ================= Bug 修复：结果页返回历史 + 历史本地持久化 ================= */
+describe('结果页返回与历史本地化（bugfix）', () => {
+  test('底部「历史记录」Tab 映射 HistoryScreen（results → history）', () => {
+    assert.match(app, /results: 'history'/, 'TAB 映射 results → HistoryScreen');
+  });
+
+  test('COMPLETE_ANALYSIS 自动写入本地历史（history 前置插入 + 快照）', () => {
+    assert.match(store, /history: \[item, \.\.\.state\.history\]/, '分析结果应插入历史列表');
+    assert.match(store, /analysis: a,/, '历史条目应含 analysis 快照');
+    assert.match(store, /screenStack: \['history'\]/, '返回栈指向历史记录');
+  });
+
+  test('历史页拉取失败不清空本地历史', () => {
+    const history = read('screens/HistoryScreen.jsx');
+    assert.ok(!history.includes("SET_HISTORY', items: []"), '不应在失败时清空历史');
+    assert.match(history, /保留本地已有历史/);
+  });
+});

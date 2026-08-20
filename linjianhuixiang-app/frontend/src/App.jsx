@@ -59,7 +59,8 @@ function BottomNavHost() {
   const { state, dispatch } = useApp();
   if (state.screen === 'analyzing') return null; // 分析中全屏，隐藏底栏
   const onTab = (id) => {
-    const screen = { home: 'home', results: 'results', map: 'map', me: 'settings' }[id];
+    // 底部「历史记录」Tab（id=results）→ 显示 HistoryScreen
+    const screen = { home: 'home', results: 'history', map: 'map', me: 'settings' }[id];
     dispatch({ type: 'TAB', tab: id, screen });
   };
   return <BottomNav tab={state.tab} onTab={onTab} />;
