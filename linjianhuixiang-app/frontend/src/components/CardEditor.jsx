@@ -90,6 +90,13 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     if (canvas.width !== view.w) canvas.width = view.w;
     if (canvas.height !== view.h) canvas.height = view.h;
     const ctx = canvas.getContext('2d');
+    // 关键：每帧先清空整张画布（不依赖 width 重设的副作用），否则树变时（拖动元素）
+    // view.w 不变 → 不重设 width → 旧内容保留 → 叠加成"纸堆"
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    // 再设视口变换并渲染
     const s = view.scale * view.zoom;
     ctx.setTransform(s, 0, 0, s, view.panX * s, view.panY * s);
     renderCardElements(ctx, treeRef.current);

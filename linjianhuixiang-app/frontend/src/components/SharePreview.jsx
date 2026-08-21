@@ -19,7 +19,8 @@ export function saveCardImage(dataUrl, filename = 'linjianhuixiang_share.png') {
     return new Promise((resolve) => {
       let done = false;
       try {
-        const r = bridge.saveImage(dataUrl);
+        // 必须传 filename 给 Kotlin 端：sanitize(null) 会抛 NPE 导致整次保存失败
+        const r = bridge.saveImage(dataUrl, filename);
         if (typeof r === 'boolean') {
           done = true;
           resolve(r);
@@ -27,11 +28,9 @@ export function saveCardImage(dataUrl, filename = 'linjianhuixiang_share.png') {
           r.then((ok) => { if (!done) { done = true; resolve(!!ok); } })
             .catch(() => { if (!done) { done = true; resolve(false); } });
         } else {
-          // 桥存在但返回非布尔（历史兼容：无返回值视为成功）
           done = true;
           resolve(true);
         }
-        // 兜底：3 秒内无结果视为失败（防桥调用挂死）
         setTimeout(() => {
           if (!done) { done = true; resolve(false); }
         }, 3000);
@@ -41,7 +40,6 @@ export function saveCardImage(dataUrl, filename = 'linjianhuixiang_share.png') {
       }
     });
   }
-  // 网页降级：<a download>（同步，直接视为成功）
   const a = document.createElement('a');
   a.href = dataUrl;
   a.download = filename;
