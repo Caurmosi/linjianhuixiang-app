@@ -46,6 +46,7 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
   const [showAddBird, setShowAddBird] = useState(false);
   const [birdSearch, setBirdSearch] = useState('');
   const [birdsReady, setBirdsReady] = useState(birdsLoaded()); // 120 张图是否已加载到 Image 缓存
+  const [editingText, setEditingText] = useState(null); // 正在编辑的文字元素 {id, text, fontSize, color}
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const stateRef = useRef({ tree, selId, dragMode });
@@ -230,8 +231,16 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
   const editSelText = () => {
     const el = tree.elements.find((e) => e.id === selId);
     if (!el || el.type !== 'text') return;
-    const v = window.prompt('编辑文字', el.data.text || '');
-    if (v != null) updateEl(el.id, { data: { ...el.data, text: v } });
+    // 用 inline 弹层替代 window.prompt（Android WebView 下 prompt 标题显示 file://，体验差）
+    setEditingText({ id: el.id, text: el.data.text || '', fontSize: el.data.fontSize || 22, color: el.data.color || '#22332a' });
+  };
+
+  const commitEditText = (newText) => {
+    if (editingText) {
+      const el = tree.elements.find((e) => e.id === editingText.id);
+      if (el) updateEl(el.id, { data: { ...el.data, text: newText } });
+    }
+    setEditingText(null);
   };
 
   const onSaveImage = async () => {
@@ -283,7 +292,7 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
       {/* 画布 + 工具栏 */}
       <div style={{ flex: 1, display: 'flex', gap: 10, padding: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
         {/* 画布 */}
-        <div ref={wrapRef} style={{ position: 'relative', height: '100%', aspectRatio: `${W}/${H}`, maxHeight: '100%', touchAction: 'none' }}>
+        <div ref={wrapRef} style={{ position: 'relative', height: '100%', aspectRatio: `${W}/${H}`, maxHeight: '100%', maxWidth: '100%', touchAction: 'none', userSelect: 'none' }}>
           <canvas
             ref={canvasRef}
             width={W}
@@ -291,12 +300,15 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
             onPointerLeave={onPointerUp}
             onDoubleClick={editSelText}
             style={{
               width: '100%', height: '100%', borderRadius: 10,
               boxShadow: '0 12px 44px rgba(0,0,0,.5)', cursor: dragMode ? 'grabbing' : 'pointer',
               background: style.bg,
+              touchAction: 'none', // 关键：阻止 WebView 把触摸当滚动/缩放，让 pointer events 全部交给 canvas
+              userSelect: 'none',
             }}
           />
           {/* 选中元素信息条 */}
@@ -353,6 +365,31 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
             <div style={{ padding: '10px 16px', borderTop: '1px solid #eef2ef', fontSize: 12, color: '#7a9186' }}>
               {birdsReady ? '✓ 鸟图已就绪' : `加载鸟图中…（${loadStatus().loaded}/${loadStatus().total}）`}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* inline 文字编辑弹层（替代 WebView 的 window.prompt 体验） */}
+      {editingText && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(10,20,14,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => commitEditText(editingText.text)}>
+          <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 460, padding: 18 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, color: '#1b3a2a' }}>编辑文字</div>
+            <textarea
+              autoFocus
+              value={editingText.text}
+              onChange={(e) => setEditingText((v) => ({ ...v, text: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEditText(editingText.text); }
+                if (e.key === 'Escape') { e.preventDefault(); setEditingText(null); }
+              }}
+              rows={3}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cfd9d2', fontSize: 15, outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button onClick={() => setEditingText(null)} style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid #cfd9d2', background: '#f5f7f6', color: '#5b7266', fontSize: 14, cursor: 'pointer' }}>取消</button>
+              <button onClick={() => commitEditText(editingText.text)} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', background: '#1b7a4b', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>确定</button>
+            </div>
+            <div style={{ fontSize: 11, color: '#9eb3a7', marginTop: 8, textAlign: 'center' }}>Enter 确定 · Esc 取消</div>
           </div>
         </div>
       )}
