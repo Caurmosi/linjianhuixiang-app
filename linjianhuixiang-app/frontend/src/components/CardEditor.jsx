@@ -60,17 +60,37 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     return () => { mounted = false; };
   }, [birdsReady]);
 
+  /* ---------- 画布缩放（用 ResizeObserver 算 fit 容器后的最佳 scale；aspectRatio 在 WebView 不可靠，改为 JS 算） ---------- */
+  const [zoom, setZoom] = useState(1); // 用户额外缩放 0.5~1.5
+  const [fitScale, setFitScale] = useState(1);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const cw = el.clientWidth - 4;
+      const ch = el.clientHeight - 4;
+      if (cw > 0 && ch > 0) {
+        setFitScale(Math.min(cw / W, ch / H));
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const displayScale = fitScale * zoom; // 实际渲染缩放
+
   /* ---------- 渲染 ---------- */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const scale = canvas.width / W;
+    const s = displayScale;
+    canvas.style.width = `${W * s}px`;
+    canvas.style.height = `${H * s}px`;
     const ctx = canvas.getContext('2d');
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.setTransform(s, 0, 0, s, 0, 0);
     renderCardElements(ctx, stateRef.current.tree);
     const sel = stateRef.current.tree.elements.find((e) => e.id === stateRef.current.selId);
-    if (sel) drawSelection(ctx, sel);
-  }, [tree, selId]);
+    if (sel) drawSelection(ctx, sel, s);
+  }, [tree, selId, displayScale]);
 
   function drawSelection(ctx, el) {
     ctx.save();
@@ -290,9 +310,9 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
       </div>
 
       {/* 画布 + 工具栏 */}
-      <div style={{ flex: 1, display: 'flex', gap: 10, padding: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
-        {/* 画布 */}
-        <div ref={wrapRef} style={{ position: 'relative', height: '100%', aspectRatio: `${W}/${H}`, maxHeight: '100%', maxWidth: '100%', touchAction: 'none', userSelect: 'none' }}>
+      <div style={{ flex: 1, display: 'flex', gap: 10, padding: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
+        {/* 画布容器：用 JS + ResizeObserver 算 fit 后的 scale，避开 WebView aspectRatio 兼容问题 */}
+        <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', userSelect: 'none', overflow: 'auto' }}>
           <canvas
             ref={canvasRef}
             width={W}
@@ -304,11 +324,12 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
             onPointerLeave={onPointerUp}
             onDoubleClick={editSelText}
             style={{
-              width: '100%', height: '100%', borderRadius: 10,
+              borderRadius: 10,
               boxShadow: '0 12px 44px rgba(0,0,0,.5)', cursor: dragMode ? 'grabbing' : 'pointer',
               background: style.bg,
-              touchAction: 'none', // 关键：阻止 WebView 把触摸当滚动/缩放，让 pointer events 全部交给 canvas
+              touchAction: 'none', // 关键：阻止 WebView 把触摸当滚动/缩放
               userSelect: 'none',
+              flexShrink: 0,
             }}
           />
           {/* 选中元素信息条 */}
@@ -324,6 +345,15 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
           <button onClick={addText} style={toolBtn}>+ 添加文字</button>
           <button onClick={() => setShowAddBird(true)} style={toolBtn}>+ 添加鸟图</button>
           <button onClick={removeSelected} disabled={!selId} style={{ ...toolBtn, color: selId ? '#ff8a80' : '#777' }}>删除选中</button>
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.15)', margin: '4px 0' }} />
+          {/* 画布缩放：50%~150%（aspectRatio 在 WebView 不可靠，这里给用户手动缩放查看完整画布） */}
+          <div style={{ color: '#9fb3a7', fontSize: 11, marginTop: 2 }}>画布缩放 {Math.round(zoom * 100)}%</div>
+          <input
+            type="range" min="0.5" max="1.5" step="0.05"
+            value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))}
+            style={{ width: '100%', accentColor: '#4db382' }}
+          />
+          <button onClick={() => setZoom(1)} style={{ ...toolBtn, fontSize: 12, padding: '6px 10px' }}>↺ 缩放重置 100%</button>
           <div style={{ height: 1, background: 'rgba(255,255,255,0.15)', margin: '4px 0' }} />
           <div style={{ color: '#9fb3a7', fontSize: 12, lineHeight: 1.6 }}>
             提示：<br />· 拖拽移动元素<br />· 拖角柄缩放<br />· 拖上方圆柄旋转<br />· 双击文字改内容

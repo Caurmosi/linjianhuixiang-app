@@ -124,6 +124,8 @@ export const BIRD_BOOK = [
     { name: '星鸦', alias: 'Spotted Nutcracker', feature: '褐体白斑，嘴长直', habit: '储藏松子，山地针叶林', habitat: '北方山地', protect: '无危(LC)', icon: '#7a6a5a' },
     { name: '栗耳短脚鹎', alias: 'Brown-eared Bulbul', feature: '头灰棕耳斑，体褐，尾长', habit: '结群食果，叫声“嘎嘎”', habitat: '南方常见，园林', protect: '无危(LC)', icon: '#8a7a5c' },
     { name: '虎斑地鸫', alias: "White's Thrush", feature: '金褐底黑色鳞斑，体型大', habit: '林下翻落叶觅食', habitat: '迁徙可见，密林', protect: '无危(LC)', icon: '#a08a5a' },
+  { name: '拟八哥', alias: '紫翅椋鸟 · Common Starling', feature: '通体黑带紫色绿色金属光泽，冬季密布白点斑', habit: '群居杂食，鸣声嘈杂多变，善模仿，常大群活动于农田草地', habitat: '入侵种，全国广布，城乡皆见', protect: '无危(LC)', icon: '#2a2a35' },
+  { name: '主红雀', alias: '北美红雀 · Northern Cardinal', feature: '雄鸟通体鲜红，黑脸黑喉，冠羽高耸；雌鸟灰褐带红', habit: '常成对活动，地面与灌丛觅食，鸣声婉转多变', habitat: '原产北美，近年中国北方公园/动物园偶有记录', protect: '无危(LC)', icon: '#c02a2a' },
 ];
 
 /** 图鉴查询：按中文名/别名精确或包含匹配，返回条目或 null */
