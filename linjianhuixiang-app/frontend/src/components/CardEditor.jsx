@@ -60,15 +60,16 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     return () => { mounted = false; };
   }, [birdsReady]);
 
-  /* ---------- 画布缩放（用 ResizeObserver 算 fit 容器后的最佳 scale；aspectRatio 在 WebView 不可靠，改为 JS 算） ---------- */
-  const [zoom, setZoom] = useState(1); // 用户额外缩放 0.5~1.5
-  const [fitScale, setFitScale] = useState(1);
+  /* ---------- 画布：自动 fit + 用户可 pan / zoom（"手机画板"体验） ---------- */
+  const [fitScale, setFitScale] = useState(1);   // 自动 fit 容器后的 base scale
+  const [zoom, setZoom] = useState(1);           // 用户额外缩放 0.4~2.0
+  const [pan, setPan] = useState({ x: 0, y: 0 }); // 画布在容器内的平移（内部坐标）
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      const cw = el.clientWidth - 4;
-      const ch = el.clientHeight - 4;
+      const cw = el.clientWidth - 8;
+      const ch = el.clientHeight - 8;
       if (cw > 0 && ch > 0) {
         setFitScale(Math.min(cw / W, ch / H));
       }
@@ -76,7 +77,8 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const displayScale = fitScale * zoom; // 实际渲染缩放
+  const displayScale = fitScale * zoom;
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
   /* ---------- 渲染 ---------- */
   useEffect(() => {
@@ -121,14 +123,14 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     ctx.restore();
   }
 
-  /* ---------- 坐标换算 ---------- */
+  /* ---------- 坐标换算（画布已通过 CSS transform 缩放/平移，需除以 displayScale 再扣回 pan） ---------- */
   function toCanvasXY(e) {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const scale = W / rect.width;
+    const s = displayScale || 1;
     return {
-      x: (e.clientX - rect.left) * scale,
-      y: (e.clientY - rect.top) * scale,
+      x: (e.clientX - rect.left) / s + pan.x,
+      y: (e.clientY - rect.top) / s + pan.y,
     };
   }
 
@@ -174,12 +176,31 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
       e.preventDefault();
       setDragMode('move');
       dragRef.current = { startX: x, startY: y, el: hit, mode: 'move' };
+    } else {
+      // **没命中元素 → 拖动整个画布（pan）**
+      e.preventDefault();
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const startPan = { ...pan };
+      dragRef.current = {
+        mode: 'pan', startClientX, startClientY, startPan,
+        // 兼容 onPointerMove 里的 dx/dy 计算
+        startX: x, startY: y, el: null,
+      };
+      setDragMode('pan');
     }
   }
 
   function onPointerMove(e) {
     const dr = dragRef.current;
     if (!dr || !dr.mode) return;
+    if (dr.mode === 'pan') {
+      // 用 clientX/Y 算 pan 偏移（更稳，不依赖 canvas 当前 scale）
+      const ndcx = (e.clientX - dr.startClientX) / (displayScale || 1);
+      const ndcy = (e.clientY - dr.startClientY) / (displayScale || 1);
+      setPan({ x: dr.startPan.x - ndcx, y: dr.startPan.y - ndcy });
+      return;
+    }
     const { x, y } = toCanvasXY(e);
     const dx = x - dr.startX;
     const dy = y - dr.startY;
@@ -309,60 +330,77 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
         ))}
       </div>
 
-      {/* 画布 + 工具栏 */}
-      <div style={{ flex: 1, display: 'flex', gap: 10, padding: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
-        {/* 画布容器：用 JS + ResizeObserver 算 fit 后的 scale，避开 WebView aspectRatio 兼容问题 */}
-        <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', userSelect: 'none', overflow: 'auto' }}>
-          <canvas
-            ref={canvasRef}
-            width={W}
-            height={H}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            onPointerLeave={onPointerUp}
-            onDoubleClick={editSelText}
-            style={{
-              borderRadius: 10,
-              boxShadow: '0 12px 44px rgba(0,0,0,.5)', cursor: dragMode ? 'grabbing' : 'pointer',
-              background: style.bg,
-              touchAction: 'none', // 关键：阻止 WebView 把触摸当滚动/缩放
-              userSelect: 'none',
-              flexShrink: 0,
-            }}
-          />
-          {/* 选中元素信息条 */}
-          {selEl && (
-            <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.65)', color: '#fff', borderRadius: 12, padding: '5px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>
-              {selEl.type === 'text' ? '文字（双击编辑）' : selEl.type === 'polaroid' ? `鸟图：${selEl.data.birdName || ''}` : selEl.type} · 拖拽移动 · 角柄缩放 · 上柄旋转
-            </div>
-          )}
-        </div>
-
-        {/* 工具栏 */}
-        <div style={{ width: 150, flex: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button onClick={addText} style={toolBtn}>+ 添加文字</button>
-          <button onClick={() => setShowAddBird(true)} style={toolBtn}>+ 添加鸟图</button>
-          <button onClick={removeSelected} disabled={!selId} style={{ ...toolBtn, color: selId ? '#ff8a80' : '#777' }}>删除选中</button>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.15)', margin: '4px 0' }} />
-          {/* 画布缩放：50%~150%（aspectRatio 在 WebView 不可靠，这里给用户手动缩放查看完整画布） */}
-          <div style={{ color: '#9fb3a7', fontSize: 11, marginTop: 2 }}>画布缩放 {Math.round(zoom * 100)}%</div>
-          <input
-            type="range" min="0.5" max="1.5" step="0.05"
-            value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))}
-            style={{ width: '100%', accentColor: '#4db382' }}
-          />
-          <button onClick={() => setZoom(1)} style={{ ...toolBtn, fontSize: 12, padding: '6px 10px' }}>↺ 缩放重置 100%</button>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.15)', margin: '4px 0' }} />
-          <div style={{ color: '#9fb3a7', fontSize: 12, lineHeight: 1.6 }}>
-            提示：<br />· 拖拽移动元素<br />· 拖角柄缩放<br />· 拖上方圆柄旋转<br />· 双击文字改内容
+      {/* 画布区（占满中间剩余空间；画布可 pan + zoom，像手机画板） */}
+      <div
+        ref={wrapRef}
+        onPointerDown={(e) => { onPointerDown(e); }}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={editSelText}
+        style={{
+          flex: 1,
+          position: 'relative',
+          background: '#0e1a14',
+          overflow: 'hidden',
+          touchAction: 'none',
+          userSelect: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: 0,
+        }}
+      >
+        {/* 画布：CSS transform 做缩放+平移；canvas 物理 720×960 始终不变 */}
+        <canvas
+          ref={canvasRef}
+          width={W}
+          height={H}
+          style={{
+            width: W * displayScale,
+            height: H * displayScale,
+            transform: `translate(${pan.x * displayScale}px, ${pan.y * displayScale}px)`,
+            transformOrigin: '0 0',
+            borderRadius: 8,
+            boxShadow: '0 12px 44px rgba(0,0,0,.5)',
+            cursor: dragMode === 'pan' ? 'grabbing' : dragMode === 'move' ? 'grabbing' : dragMode ? 'grabbing' : 'grab',
+            background: style.bg,
+            touchAction: 'none',
+            userSelect: 'none',
+            flexShrink: 0,
+          }}
+        />
+        {/* 选中元素信息条 */}
+        {selEl && (
+          <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', borderRadius: 12, padding: '6px 16px', fontSize: 12, whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+            {selEl.type === 'text' ? '文字（双击编辑）' : selEl.type === 'polaroid' ? `鸟图：${selEl.data.birdName || ''}` : selEl.type} · 拖拽移动 · 角柄缩放 · 上柄旋转
           </div>
-          {toast && (
-            <div style={{ marginTop: 'auto', color: toast.includes('失败') ? '#ff8a80' : '#7fd9a0', fontSize: 12, textAlign: 'center' }}>
-              {toast}
-            </div>
-          )}
+        )}
+        {toast && (
+          <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.78)', color: toast.includes('失败') ? '#ff8a80' : '#7fd9a0', borderRadius: 10, padding: '6px 16px', fontSize: 13, pointerEvents: 'none' }}>
+            {toast}
+          </div>
+        )}
+      </div>
+
+      {/* 底部 dock：工具栏 + 缩放控制 */}
+      <div style={{ background: '#16211b', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '8px 12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button onClick={addText} style={{ ...dockBtn, flex: 1 }}>+ 文字</button>
+          <button onClick={() => setShowAddBird(true)} style={{ ...dockBtn, flex: 1 }}>+ 鸟图</button>
+          <button onClick={removeSelected} disabled={!selId} style={{ ...dockBtn, flex: 1, color: selId ? '#ff8a80' : '#555' }}>删除</button>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: '#9fb3a7', fontSize: 12 }}>
+          <span style={{ minWidth: 64, fontVariantNumeric: 'tabular-nums' }}>缩放 {Math.round(zoom * 100)}%</span>
+          <input
+            type="range" min="0.4" max="2" step="0.05"
+            value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))}
+            style={{ flex: 1, accentColor: '#4db382' }}
+          />
+          <button onClick={resetView} style={{ ...dockBtn, padding: '6px 12px', flex: 'none' }}>↺ 复位</button>
+        </div>
+        <div style={{ color: '#7a8d80', fontSize: 11, textAlign: 'center', lineHeight: 1.5 }}>
+          拖空白处平移画布 · 拖元素移动/角柄缩放/上柄旋转 · 双击文字改内容
         </div>
       </div>
 
@@ -431,8 +469,9 @@ const topBtn = {
   border: 'none', background: 'rgba(255,255,255,0.12)', color: '#dfe8e1',
   borderRadius: 12, padding: '8px 16px', fontSize: 14, cursor: 'pointer',
 };
-const toolBtn = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+// 底部 dock 按钮
+const dockBtn = {
+  padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 600,
   border: '1px solid rgba(255,255,255,0.22)', background: 'rgba(255,255,255,0.08)',
   color: '#dfe8e1', cursor: 'pointer',
 };

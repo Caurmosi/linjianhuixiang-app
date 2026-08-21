@@ -332,7 +332,8 @@ function renderPolaroid(ctx, el, style) {
   ctx.lineWidth = 1.2;
   ctx.strokeRect(-w / 2 + 10, -h / 2 + 10, w - 20, h - 20);
   if (name) {
-    // 优先用真实照片（已预加载的 Image 缓存）；加载失败/未就绪时降级 drawBirdBadge
+    // 优先真实照片；**无图时绝对不画卡通**（用户明确要求：找不到真图就空白，
+    // 绝不能误导用户把卡通当真实图鉴鸟图）
     const photo = getLoaded(name);
     if (photo && photo.naturalWidth > 0) {
       // 照片区：拍立得上半部分
@@ -342,14 +343,24 @@ function renderPolaroid(ctx, el, style) {
       const ph = h - 90; // 留 90px 给文字
       try {
         drawImageCover(ctx, photo, px, py, pw, ph);
-      } catch (e) { /* 单图失败继续走文字 */ }
+      } catch (e) { /* 单图失败保持空白 */ }
     } else {
-      // 降级：卡通徽章 + 物种名（同旧行为）
-      try {
-        drawBirdBadge(ctx, { x: 0, y: -22, r: 92, name });
-      } catch (e) { /* 单只失败不阻塞 */ }
+      // 空白占位 + 角标「未收录图鉴」（绝不画卡通）
+      const px = -w / 2 + 14;
+      const py = -h / 2 + 14;
+      const pw = w - 28;
+      const ph = h - 90;
+      ctx.fillStyle = 'rgba(230,228,220,0.55)';
+      ctx.fillRect(px, py, pw, ph);
+      ctx.fillStyle = 'rgba(150,150,150,0.7)';
+      ctx.font = `bold 14px ${FONT_HAND}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('该鸟暂未收录图鉴', 0, py + ph / 2 - 8);
+      ctx.font = `11px ${FONT_SANS}`;
+      ctx.fillText('· 林间回响 ·', 0, py + ph / 2 + 12);
     }
-    // 鸟名 + 副标题（无论用照片还是卡通都画）
+    // 鸟名 + 副标题（无论有没有图都画）
     ctx.fillStyle = style.fg;
     ctx.font = `bold 18px ${FONT_HAND}`;
     ctx.textAlign = 'center';
