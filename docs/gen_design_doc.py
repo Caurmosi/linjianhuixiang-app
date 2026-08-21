@@ -230,18 +230,29 @@ def build():
     para(doc, 'frontend/tests/dataContract.test.js 守护字段契约（species/indices/livability/heatmap/mapPoints/history），'
               '前端 mock 与后端响应结构不一致时测试立即失败，保证双数据源口径一致。')
     h2(doc, '13.3 真实鸟图预加载（分享卡片用）')
-    bullet(doc, '资源来源：backend/scripts/fetch_bird_photos.py 从 Bing 图片搜索（cn.bing.com/images/async）抓取 121 种城市常见鸟真实照片，'
-                '正则解析 murl，中心裁剪 320x320 JPEG 质量 82，optimize+progressive，输出 frontend/src/assets/birds/{index:03d}_{name}.jpg；'
-                '单张 8-30KB，全部 ~2-3MB。')
-    bullet(doc, '水印图库黑名单：699pic / nipic / vcg / veer / 58pic / pixabay / zol / bcebos / 搜图 699 等域名直接跳过，'
-                '避免抓到水印或防盗图占位。')
-    bullet(doc, '多重搜索词：{中文名 鸟} → {实拍} → {观鸟} → {摄影} → {英文名} → {学名}，6 组 fallback 应对 699pic 占满前几张的情况。')
-    bullet(doc, '前端加载：utils/birdImageLoader.js 用 import.meta.glob 批量 import 全部 URL，loadAll() 异步预加载到 Image 缓存；'
-                'cardElements.renderPolaroid 优先 drawImage（object-fit: cover 居中裁剪），加载失败/未就绪时降级参数化卡通鸟图 drawBirdBadge。')
-    bullet(doc, '触发时机：ResultsScreen/HistoryScreen 的「分享」按钮先 await loadAll() 再 drawShareCard，保证拍立得里画的是真实照片。')
-    h2(doc, '13.4 页面清单')
+    bullet(doc, '资源来源：backend/scripts/fetch_bird_photos.py 从 Bing 图片搜索（cn.bing.com/images/async）抓取 122 种城市常见鸟真实照片'
+                '（120 种图鉴 + 拟八哥/主红雀），正则解析 murl，中心裁剪 320x320 JPEG 质量 82，optimize+progressive，'
+                '输出 frontend/src/assets/birds/bird_001.jpg ~ bird_122.jpg；单张 8-35KB，全部 ~2.4MB。')
+    bullet(doc, '水印图库黑名单：699pic / nipic / vcg / veer / 58pic / pixabay / zol / bcebos 等域名直接跳过，避免抓水印/防盗图占位；'
+                '6 组搜索词 fallback（中文名 鸟/实拍/观鸟/摄影 → 英文名 → 学名）。')
+    bullet(doc, '文件名必须纯英文：Android WebView 的 file:// 协议对 percent-encoded 路径支持差，'
+                '中文文件名经 Vite 编译（new URL(filename, import.meta.url).href）会被 percent-encode，导致图片加载失败。')
+    bullet(doc, '前端加载：utils/birdImageLoader.js 显式 import + ?url 后缀（Vite 一定 emit 到 dist），loadAll() 异步预加载 + img.decode() '
+                '确保真正可绘制；**绝无卡通兜底**——找不到真图时拍立得显示「该鸟暂未收录图鉴」占位（用户明确要求，避免误导）。')
+    bullet(doc, '鸟名模糊匹配 resolveBirdName()：识别名（BirdNET 中文名）与图鉴名三级匹配——精确(1.0) → 别名/名称包含(0.92/0.85) → '
+                '编辑距离相似度 ≥0.55（如 树麻雀→麻雀、白头翁→白头鹎、灰掠鸟→灰椋鸟、斑鸠→珠颈斑鸠），匹配不到才占位。')
+    bullet(doc, '统一渲染：share() / 批量分享 / 编辑器共用 utils/shareCard.js → cardElements.js 的 buildDefaultTree + renderTreeToCanvas'
+                '（早期 shareCard.js 是独立卡通渲染导致"外面卡通、里面真图"，已重写统一）。')
+    bullet(doc, '触发时机：ResultsScreen/HistoryScreen 的「分享」先 await loadAll() 再出图，保证拍立得是真实照片。')
+    h2(doc, '13.4 分享卡片编辑器（画板体验）')
+    bullet(doc, '画布 canvas 物理尺寸 = 编辑区视口大小，永远铺满；平移/缩放用 ctx.setTransform 内部变换（不用 CSS transform，WebView 兼容差）。')
+    bullet(doc, '交互：拖空白 = 平移画布；拖元素 = 移动；角柄 = 缩放元素；上柄 = 旋转；双击文字 = inline 弹层编辑（不用 window.prompt，'
+                'WebView 下 file:// 标题）；底部 dock：+文字 / +鸟图 / 删除 / 缩放滑杆(40%~200%) / 复位。')
+    bullet(doc, '保存：bridge.saveImage(dataUrl, filename) 走 MediaStore（API 29+ 免权限）或公共 Pictures + WRITE_EXTERNAL_STORAGE（API ≤ 28）；'
+                '前端必须传 filename（缺参会致 Kotlin sanitize(null) NPE）。')
+    h2(doc, '13.5 页面清单')
     para(doc, '首页 / 录音（实时+导入）/ 分析中 / 结果 / 物种清单 / 声学指数 / 时间热力图 / 宜居度详情 / '
-              '地区记录 / 地图（选点）/ 鸟种图鉴（121 种）/ 登录 / 设置 / 使用说明 / 样例音频 / 方法学。')
+              '地区记录 / 地图（选点）/ 鸟种图鉴（122 种）/ 登录 / 设置 / 使用说明 / 样例音频 / 方法学。')
 
     # ============ 十四、公共网页 ============
     h1(doc, '十四、公共地图网页')
