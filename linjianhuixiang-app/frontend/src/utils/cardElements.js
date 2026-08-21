@@ -9,6 +9,7 @@
  */
 
 import { drawBirdBadge } from './birdIcon.js';
+import { getLoaded } from './birdImageLoader.js';
 
 export const CARD_W = 720;
 export const CARD_H = 960;
@@ -299,20 +300,56 @@ function renderScore(ctx, el, style) {
   ctx.fillText('LIVABILITY', 0, 75);
 }
 
+function drawImageCover(ctx, img, x, y, w, h) {
+  // object-fit: cover —— 按目标框比例居中裁剪原图
+  const ir = img.naturalWidth / img.naturalHeight;
+  const dr = w / h;
+  let sx, sy, sw, sh;
+  if (ir > dr) {
+    sh = img.naturalHeight;
+    sw = sh * dr;
+    sx = (img.naturalWidth - sw) / 2;
+    sy = 0;
+  } else {
+    sw = img.naturalWidth;
+    sh = sw / dr;
+    sx = 0;
+    sy = (img.naturalHeight - sh) / 2;
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
 function renderPolaroid(ctx, el, style) {
   const name = el.data.birdName;
   const w = el.w; const h = el.h;
+  // 拍立得白底 + 阴影
   shadow(ctx, 'rgba(30,30,30,0.30)', 22, 6, 10);
   ctx.fillStyle = style.paper;
   ctx.fillRect(-w / 2, -h / 2, w, h);
   clearShadow(ctx);
+  // 边框
   ctx.strokeStyle = 'rgba(232,225,210,0.8)';
   ctx.lineWidth = 1.2;
   ctx.strokeRect(-w / 2 + 10, -h / 2 + 10, w - 20, h - 20);
   if (name) {
-    try {
-      drawBirdBadge(ctx, { x: 0, y: -22, r: 92, name });
-    } catch (e) { /* 单只失败不阻塞 */ }
+    // 优先用真实照片（已预加载的 Image 缓存）；加载失败/未就绪时降级 drawBirdBadge
+    const photo = getLoaded(name);
+    if (photo && photo.naturalWidth > 0) {
+      // 照片区：拍立得上半部分
+      const px = -w / 2 + 14;
+      const py = -h / 2 + 14;
+      const pw = w - 28;
+      const ph = h - 90; // 留 90px 给文字
+      try {
+        drawImageCover(ctx, photo, px, py, pw, ph);
+      } catch (e) { /* 单图失败继续走文字 */ }
+    } else {
+      // 降级：卡通徽章 + 物种名（同旧行为）
+      try {
+        drawBirdBadge(ctx, { x: 0, y: -22, r: 92, name });
+      } catch (e) { /* 单只失败不阻塞 */ }
+    }
+    // 鸟名 + 副标题（无论用照片还是卡通都画）
     ctx.fillStyle = style.fg;
     ctx.font = `bold 18px ${FONT_HAND}`;
     ctx.textAlign = 'center';

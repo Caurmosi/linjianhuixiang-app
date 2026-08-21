@@ -16,6 +16,7 @@ import { formatISODate } from '../utils/dates';
 import { humanizeBackendError } from '../utils/errorText';
 import { drawShareCard } from '../utils/shareCard';
 import { buildDefaultTree } from '../utils/cardElements';
+import { loadAll as loadBirdImages } from '../utils/birdImageLoader';
 import { IconBird, IconClock, IconChevronRight, IconTrash, IconShare, IconStar } from '../components/icons';
 
 export default function HistoryScreen() {
@@ -155,10 +156,11 @@ export default function HistoryScreen() {
     if (delState === 'done') exitSelect();
   };
 
-  /** 批量分享：逐条生成分享卡片 → 预览 */
+  /** 批量分享：逐条生成分享卡片 → 预览（先预加载鸟图） */
   const bulkShare = async () => {
     if (!selectedItems.length || sharing) return;
     setSharing(true);
+    try { await loadBirdImages(); } catch (e) { /* 加载失败时降级卡通 */ }
     const out = [];
     for (const item of selectedItems) {
       try {

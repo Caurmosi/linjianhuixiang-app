@@ -13,6 +13,7 @@ import WaveformChart from '../components/charts/WaveformChart';
 import { gradeOf, livabilityDesc } from '../data/repository';
 import { drawShareCard } from '../utils/shareCard';
 import { buildDefaultTree } from '../utils/cardElements';
+import { loadAll as loadBirdImages } from '../utils/birdImageLoader';
 import { IconShare, IconDoc, IconChart, IconHeat, IconGlobe } from '../components/icons';
 
 /** 置信度档位 → Chip tone（高=绿 / 中=琥珀 / 低=红），贴合设计 token */
@@ -56,11 +57,20 @@ export default function ResultsScreen() {
 
   const go = (screen) => dispatch({ type: 'GO', screen });
   // 分享：生成「单次录音」分享卡片 → 全屏预览（预览后可保存/编辑）
+  // 先预加载 120 张鸟图到 Image 缓存，确保拍立得里画的是真实照片而非卡通兜底
   const [shareCards, setShareCards] = useState(null);
   const [editingTree, setEditingTree] = useState(null);
-  const share = () => {
-    const { dataUrl } = drawShareCard(state.analysis);
-    setShareCards([{ dataUrl, title: (state.analysis && state.analysis.recording) || '分享卡片' }]);
+  const [sharing, setSharing] = useState(false);
+  const share = async () => {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      await loadBirdImages();
+      const { dataUrl } = drawShareCard(state.analysis);
+      setShareCards([{ dataUrl, title: (state.analysis && state.analysis.recording) || '分享卡片' }]);
+    } finally {
+      setSharing(false);
+    }
   };
 
   const QUICK = [
@@ -76,7 +86,7 @@ export default function ResultsScreen() {
         title="分析结果"
         onBack={() => dispatch({ type: 'BACK' })}
         right={
-          <button className="ico-btn" onClick={share} aria-label="导出报告">
+          <button className="ico-btn" onClick={share} aria-label="导出报告" disabled={sharing}>
             <IconShare size={18} />
           </button>
         }

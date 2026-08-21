@@ -17,6 +17,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { renderCardElements, renderTreeToCanvas, getStyle, CARD_STYLES, uid } from '../utils/cardElements.js';
 import { saveCardImage } from './SharePreview.jsx';
+import { BIRD_BOOK } from '../data/birdBook.js';
+import { loadAll as loadBirdImages, isLoaded as birdsLoaded, loadStatus } from '../utils/birdImageLoader.js';
 
 const W = 720;
 const H = 960;
@@ -42,10 +44,20 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [showAddBird, setShowAddBird] = useState(false);
+  const [birdSearch, setBirdSearch] = useState('');
+  const [birdsReady, setBirdsReady] = useState(birdsLoaded()); // 120 张图是否已加载到 Image 缓存
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
   const stateRef = useRef({ tree, selId, dragMode });
   stateRef.current = { tree, selId, dragMode };
+
+  /* 预加载 120 张真实鸟图到 Image 缓存（保证实时渲染时同步 drawImage 成功） */
+  useEffect(() => {
+    if (birdsReady) return;
+    let mounted = true;
+    loadBirdImages().then(() => { if (mounted) setBirdsReady(true); });
+    return () => { mounted = false; };
+  }, [birdsReady]);
 
   /* ---------- 渲染 ---------- */
   useEffect(() => {
@@ -312,20 +324,34 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
         </div>
       </div>
 
-      {/* 选鸟弹层 */}
+      {/* 选鸟弹层（支持 120 种真实鸟图，按鸟名搜索过滤） */}
       {showAddBird && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 99, background: 'rgba(10,20,14,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowAddBird(false)}>
-          <div style={{ background: '#fff', borderRadius: 16, maxWidth: 420, width: '100%', maxHeight: '70%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ padding: '14px 16px', fontWeight: 700, fontSize: 15, borderBottom: '1px solid #eef2ef' }}>选择要添加的鸟</div>
+          <div style={{ background: '#fff', borderRadius: 16, maxWidth: 480, width: '100%', maxHeight: '78%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '12px 16px', fontWeight: 700, fontSize: 15, borderBottom: '1px solid #eef2ef' }}>选择要添加的鸟（{BIRD_BOOK.length} 种）</div>
+            <div style={{ padding: 10, borderBottom: '1px solid #eef2ef' }}>
+              <input
+                value={birdSearch}
+                onChange={(e) => setBirdSearch(e.target.value)}
+                placeholder="搜索鸟名 / 学名 / 英文名"
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #cfd9d2', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {['麻雀', '白头鹎', '乌鸫', '珠颈斑鸠', '家燕', '大杜鹃', '红嘴蓝鹊', '普通翠鸟', '白鹭', '夜鹭', '斑嘴鸭', '绿头鸭', '黑枕黄鹂', '灰头绿啄木鸟', '红隼', '领角鸮', '喜鹊', '金翅雀', '黄腹山雀', '黑尾蜡嘴雀'].map((b) => (
-                <button key={b} onClick={() => addPolaroid(b)} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #cfd9d2', background: '#f4faf6', color: '#176a42', fontSize: 13, cursor: 'pointer' }}>
-                  {b}
-                </button>
-              ))}
+              {BIRD_BOOK
+                .filter((b) => {
+                  if (!birdSearch.trim()) return true;
+                  const k = birdSearch.trim().toLowerCase();
+                  return b.name.toLowerCase().includes(k) || (b.alias || '').toLowerCase().includes(k);
+                })
+                .map((b) => (
+                  <button key={b.name} onClick={() => addPolaroid(b.name)} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #cfd9d2', background: '#f4faf6', color: '#176a42', fontSize: 13, cursor: 'pointer' }}>
+                    {b.name}
+                  </button>
+                ))}
             </div>
             <div style={{ padding: '10px 16px', borderTop: '1px solid #eef2ef', fontSize: 12, color: '#7a9186' }}>
-              也可在图鉴页选择任意鸟种添加（更多物种后续支持）
+              {birdsReady ? '✓ 鸟图已就绪' : `加载鸟图中…（${loadStatus().loaded}/${loadStatus().total}）`}
             </div>
           </div>
         </div>

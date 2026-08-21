@@ -229,7 +229,17 @@ def build():
     h2(doc, '13.2 数据契约守护')
     para(doc, 'frontend/tests/dataContract.test.js 守护字段契约（species/indices/livability/heatmap/mapPoints/history），'
               '前端 mock 与后端响应结构不一致时测试立即失败，保证双数据源口径一致。')
-    h2(doc, '13.3 页面清单')
+    h2(doc, '13.3 真实鸟图预加载（分享卡片用）')
+    bullet(doc, '资源来源：backend/scripts/fetch_bird_photos.py 从 Bing 图片搜索（cn.bing.com/images/async）抓取 121 种城市常见鸟真实照片，'
+                '正则解析 murl，中心裁剪 320x320 JPEG 质量 82，optimize+progressive，输出 frontend/src/assets/birds/{index:03d}_{name}.jpg；'
+                '单张 8-30KB，全部 ~2-3MB。')
+    bullet(doc, '水印图库黑名单：699pic / nipic / vcg / veer / 58pic / pixabay / zol / bcebos / 搜图 699 等域名直接跳过，'
+                '避免抓到水印或防盗图占位。')
+    bullet(doc, '多重搜索词：{中文名 鸟} → {实拍} → {观鸟} → {摄影} → {英文名} → {学名}，6 组 fallback 应对 699pic 占满前几张的情况。')
+    bullet(doc, '前端加载：utils/birdImageLoader.js 用 import.meta.glob 批量 import 全部 URL，loadAll() 异步预加载到 Image 缓存；'
+                'cardElements.renderPolaroid 优先 drawImage（object-fit: cover 居中裁剪），加载失败/未就绪时降级参数化卡通鸟图 drawBirdBadge。')
+    bullet(doc, '触发时机：ResultsScreen/HistoryScreen 的「分享」按钮先 await loadAll() 再 drawShareCard，保证拍立得里画的是真实照片。')
+    h2(doc, '13.4 页面清单')
     para(doc, '首页 / 录音（实时+导入）/ 分析中 / 结果 / 物种清单 / 声学指数 / 时间热力图 / 宜居度详情 / '
               '地区记录 / 地图（选点）/ 鸟种图鉴（121 种）/ 登录 / 设置 / 使用说明 / 样例音频 / 方法学。')
 
