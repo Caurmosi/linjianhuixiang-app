@@ -143,14 +143,70 @@ import m122 from '../assets/birds/bird_122.jpg?url';
 // BIRD_BOOK 顺序 → URL（与 import 块下标严格同步；新增鸟种时同步追加 import + 此处）
 const URL_BY_INDEX = [m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57, m58, m59, m60, m61, m62, m63, m64, m65, m66, m67, m68, m69, m70, m71, m72, m73, m74, m75, m76, m77, m78, m79, m80, m81, m82, m83, m84, m85, m86, m87, m88, m89, m90, m91, m92, m93, m94, m95, m96, m97, m98, m99, m100, m101, m102, m103, m104, m105, m106, m107, m108, m109, m110, m111, m112, m113, m114, m115, m116, m117, m118, m119, m120, m121, m122];
 
-// 中文名 → URL（O(1) 查表）
+// 中文名 → URL（O(1) 查表；防御 BIRD_BOOK 含空洞条目）
 const URL_BY_NAME = {};
 for (let i = 0; i < BIRD_BOOK.length; i++) {
+  if (!BIRD_BOOK[i] || !BIRD_BOOK[i].name) continue;
   URL_BY_NAME[BIRD_BOOK[i].name] = URL_BY_INDEX[i];
 }
 
+/* =====================================================================
+ * 鸟名模糊匹配
+ * 识别结果（BirdNET 中文名）未必与图鉴 121 种完全一致（如"拟八哥"→"八哥"、
+ * "树麻雀"→"麻雀"、"白头翁"→"白头鹎"）。逐个加图鉴不是办法，
+ * 用「精确 → 别名/包含 → 编辑距离」三级匹配兜住大部分情况。
+ * ===================================================================== */
+function editDist(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * 识别鸟名 → 图鉴鸟种（返回 BIRD_BOOK 条目或 null）
+ * 评分：1.0 精确；0.92 别名包含/名称包含；编辑距离相似度 = 1 - dist/max(len)
+ */
+export function resolveBirdName(name) {
+  if (!name) return null;
+  const n = String(name).trim().toLowerCase();
+  if (!n) return null;
+  let best = null; let bestScore = 0;
+  for (const b of BIRD_BOOK) {
+    if (!b || !b.name) continue; // 防御空洞
+    // 1. 精确
+    if (b.name.toLowerCase() === n) return b;
+    // 2. 别名包含（英文名/俗名，如 '北美红雀 · Northern Cardinal'）
+    const alias = (b.alias || '').toLowerCase();
+    if (alias.includes(n)) { if (0.92 > bestScore) { best = b; bestScore = 0.92; } continue; }
+    const bn = b.name.toLowerCase();
+    // 3. 名称互相包含（"树麻雀"⊃"麻雀"、"拟八哥"⊃"八哥"）
+    if (bn.includes(n) || n.includes(bn)) {
+      if (0.85 > bestScore) { best = b; bestScore = 0.85; }
+      continue;
+    }
+    // 4. 编辑距离相似度（处理"白头翁"→"白头鹎"这类错字）
+    const sim = 1 - editDist(n, bn) / Math.max(n.length, bn.length);
+    if (sim >= 0.55 && sim > bestScore) { best = b; bestScore = sim; }
+  }
+  return best;
+}
+
+/** 取图 URL：自动模糊匹配（识别名 → 图鉴名） */
 export function getImageUrl(name) {
-  return URL_BY_NAME[name] || null;
+  const hit = resolveBirdName(name);
+  return hit ? URL_BY_NAME[hit.name] : null;
 }
 
 // 异步预加载：用 img.decode() 确保图片真正可绘制，再放入缓存
@@ -166,7 +222,9 @@ export function loadAll() {
   _loading = new Promise((resolve) => {
     let pending = 0;
     for (let i = 0; i < BIRD_BOOK.length; i++) {
-      const n = BIRD_BOOK[i].name;
+      const bird = BIRD_BOOK[i];
+      if (!bird || !bird.name) continue; // 防御空洞
+      const n = bird.name;
       const url = URL_BY_INDEX[i];
       if (!url) { _failures.add(n); continue; }
       if (_cache.has(n)) continue;
@@ -188,8 +246,11 @@ export function loadAll() {
   return _loading;
 }
 
+/** 取已加载的 Image：内部先模糊匹配到图鉴名，再用图鉴名查缓存 */
 export function getLoaded(name) {
-  return _cache.get(name) || null;
+  const hit = resolveBirdName(name);
+  if (!hit) return null;
+  return _cache.get(hit.name) || null;
 }
 
 export function isLoaded() { return _allDone; }

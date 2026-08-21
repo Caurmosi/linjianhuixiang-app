@@ -43,7 +43,7 @@ export const BIRD_BOOK = [
   { name: '白鹭', alias: 'Little Egret', feature: '通体纯白，嘴黑脚黑，繁殖期饰羽蓬松', habit: '浅水区静立伺机捕鱼，结群栖息', habitat: '全国广布，湿地、水田', protect: '无危(LC)', icon: '#f5f7f6' },
   { name: '池鹭', alias: 'Chinese Pond Heron', feature: '繁殖期头胸栗色背灰，冬羽灰褐带纵纹', habit: '在池塘边缓慢行走觅食，受惊飞起', habitat: '广布，湿地、稻田', protect: '无危(LC)', icon: '#b0815a' },
   { name: '夜鹭', alias: 'Black-crowned Night Heron', feature: '头顶黑蓝，背黑，腹白，红眼', habit: '晨昏活动，夜栖昼伏，集群筑巢', habitat: '广布，城市湿地、公园湖泊', protect: '无危(LC)', icon: '#3d4a5e' },
-  { name: '灰头麦鸡', alias: 'Grey-headed Lapwing', feature: '头颈灰，胸黑带，翼有黑斑，腿黄长', habit: '在开阔地走动觅食，受惊盘旋鸣叫', habitat: '迁徙可见，滩涂、草地、农田', protect: '无危(LC)', icon: '#7a8a6e' },,
+  { name: '灰头麦鸡', alias: 'Grey-headed Lapwing', feature: '头颈灰，胸黑带，翼有黑斑，腿黄长', habit: '在开阔地走动觅食，受惊盘旋鸣叫', habitat: '迁徙可见，滩涂、草地、农田', protect: '无危(LC)', icon: '#7a8a6e' },
   { name: '绿头鸭', alias: 'Mallard', feature: '雄鸟头颈绿色带白环，雌鸟斑驳棕褐', habit: '常见水鸭，成群游弋，受惊起飞', habitat: '全国广布，湖泊、公园水域', protect: '无危(LC)', icon: '#3a7d5c' },
     { name: '斑嘴鸭', alias: 'Eastern Spot-billed Duck', feature: '嘴端黄斑明显，眉纹淡，体棕褐', habit: '浅水区觅食，警觉性高', habitat: '全国广布，湿地、池塘', protect: '无危(LC)', icon: '#8a6a4e' },
     { name: '鸳鸯', alias: 'Mandarin Duck', feature: '雄鸟羽色华丽，翅有橙帆羽', habit: '成对或小群，秋冬常见于湖泊', habitat: '东北繁殖，南方越冬', protect: '无危(LC)', icon: '#b05a3c' },
