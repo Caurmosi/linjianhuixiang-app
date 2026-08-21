@@ -1,27 +1,28 @@
 /**
- * CardEditor.jsx —— 分享卡片编辑器
+ * CardEditor.jsx —— 分享卡片编辑器（v3 重做版）
  *
- * 基于「元素树」（cardElements.js）：
- *  - 画布 720×960 等比例缩放到容器，canvas 实时渲染
- *  - 点选元素 → 虚线框 + 3 个手柄（移动 / 缩放 / 旋转）
- *  - 拖拽移动、拖缩放手柄缩放、拖旋转柄旋转
- *  - 双击文字元素 → 编辑文本；工具栏可加文字/拍立得、删元素、切风格
- *  - 「保存图片」用 renderTreeToCanvas 出图（真机写相册 / 网页下载）
+ * 画板体验（用户明确要求）：
+ *  - 画布【物理尺寸 = 视口大小】，始终铺满编辑区，绝不存在"左上角一小块"假画布
+ *  - 平移/缩放全部用 ctx.setTransform 实现（canvas 内部坐标系 720×960 不变），
+ *    不用 CSS transform（Android WebView 兼容性差）
+ *  - 拖空白处 → 平移整个画布；拖元素 → 移动元素；角柄缩放元素；上柄旋转元素
+ *  - 底部 dock：+文字 / +鸟图 / 删除 / 缩放滑杆(40%~200%) / 复位
+ *  - 双击文字 → inline 弹层编辑（不用 window.prompt，WebView 下 file:// 标题）
+ *  - 「保存图片」用 renderTreeToCanvas 出 720×960 PNG
  *
  * props:
  *   initialTree: 元素树（来自 buildDefaultTree(analysis)）
  *   onClose: () => void
- *   onSave: (tree) => void —— 保存后回调（可带出最终树）
+ *   onSave: (tree) => void
  */
-
 import { useEffect, useRef, useState } from 'react';
 import { renderCardElements, renderTreeToCanvas, getStyle, CARD_STYLES, uid } from '../utils/cardElements.js';
 import { saveCardImage } from './SharePreview.jsx';
 import { BIRD_BOOK } from '../data/birdBook.js';
 import { loadAll as loadBirdImages, isLoaded as birdsLoaded, loadStatus } from '../utils/birdImageLoader.js';
 
-const W = 720;
-const H = 960;
+const W = 720; // 卡片内部逻辑宽
+const H = 960; // 卡片内部逻辑高
 
 /* ---------- 命中检测：点击 → 元素 id（z 降序，考虑旋转） ---------- */
 function hitTest(el, px, py) {
@@ -40,19 +41,24 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     initialTree ? JSON.parse(JSON.stringify(initialTree)) : { style: 'postcard', width: W, height: H, elements: [] }
   );
   const [selId, setSelId] = useState(null);
-  const [dragMode, setDragMode] = useState(null); // null | 'move' | 'resize' | 'rotate'
+  const [dragMode, setDragMode] = useState(null); // null | 'move' | 'resize' | 'rotate' | 'pan'
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [showAddBird, setShowAddBird] = useState(false);
   const [birdSearch, setBirdSearch] = useState('');
-  const [birdsReady, setBirdsReady] = useState(birdsLoaded()); // 120 张图是否已加载到 Image 缓存
-  const [editingText, setEditingText] = useState(null); // 正在编辑的文字元素 {id, text, fontSize, color}
+  const [birdsReady, setBirdsReady] = useState(birdsLoaded());
+  const [editingText, setEditingText] = useState(null);
+  const [view, setView] = useState({ w: 360, h: 480, scale: 1, panX: 0, panY: 0, zoom: 1 });
+
   const canvasRef = useRef(null);
   const wrapRef = useRef(null);
-  const stateRef = useRef({ tree, selId, dragMode });
-  stateRef.current = { tree, selId, dragMode };
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const treeRef = useRef(tree);
+  treeRef.current = tree;
+  const dragRef = useRef(null);
 
-  /* 预加载 120 张真实鸟图到 Image 缓存（保证实时渲染时同步 drawImage 成功） */
+  /* ---------- 预加载 122 张真实鸟图 ---------- */
   useEffect(() => {
     if (birdsReady) return;
     let mounted = true;
@@ -60,61 +66,56 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     return () => { mounted = false; };
   }, [birdsReady]);
 
-  /* ---------- 画布：自动 fit + 用户可 pan / zoom（"手机画板"体验） ---------- */
-  const [fitScale, setFitScale] = useState(1);   // 自动 fit 容器后的 base scale
-  const [zoom, setZoom] = useState(1);           // 用户额外缩放 0.4~2.0
-  const [pan, setPan] = useState({ x: 0, y: 0 }); // 画布在容器内的平移（内部坐标）
+  /* ---------- 视口尺寸同步：canvas 物理尺寸 = 编辑区大小 ---------- */
   useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      const cw = el.clientWidth - 8;
-      const ch = el.clientHeight - 8;
-      if (cw > 0 && ch > 0) {
-        setFitScale(Math.min(cw / W, ch / H));
-      }
-    });
-    ro.observe(el);
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const measure = () => {
+      const w = wrap.clientWidth || 360;
+      const h = wrap.clientHeight || 480;
+      const s = Math.min(w / W, h / H); // 初始 fit
+      setView((v) => ({ ...v, w, h, scale: s }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
     return () => ro.disconnect();
   }, []);
-  const displayScale = fitScale * zoom;
-  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
-  /* ---------- 渲染 ---------- */
+  /* ---------- 渲染（ctx 内部缩放平移，canvas 永远铺满视口） ---------- */
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const s = displayScale;
-    canvas.style.width = `${W * s}px`;
-    canvas.style.height = `${H * s}px`;
+    if (!canvas || !view.w) return;
+    // canvas 物理尺寸 = 视口
+    if (canvas.width !== view.w) canvas.width = view.w;
+    if (canvas.height !== view.h) canvas.height = view.h;
     const ctx = canvas.getContext('2d');
-    ctx.setTransform(s, 0, 0, s, 0, 0);
-    renderCardElements(ctx, stateRef.current.tree);
-    const sel = stateRef.current.tree.elements.find((e) => e.id === stateRef.current.selId);
+    const s = view.scale * view.zoom;
+    ctx.setTransform(s, 0, 0, s, view.panX * s, view.panY * s);
+    renderCardElements(ctx, treeRef.current);
+    const sel = treeRef.current.elements.find((e) => e.id === selId);
     if (sel) drawSelection(ctx, sel, s);
-  }, [tree, selId, displayScale]);
+  }, [view, tree, selId]);
 
-  function drawSelection(ctx, el) {
+  function drawSelection(ctx, el, s) {
     ctx.save();
     ctx.translate(el.x, el.y);
     ctx.rotate(el.rot || 0);
     ctx.strokeStyle = '#1b7a4b';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / (s || 1);
     ctx.setLineDash([6, 4]);
     ctx.strokeRect(-el.w / 2, -el.h / 2, el.w, el.h);
     ctx.setLineDash([]);
-    // 手柄
-    const hs = 12;
+    const hs = 12 / (s || 1);
     const hc = '#1b7a4b';
-    const handles = [
+    [
       { x: -el.w / 2, y: -el.h / 2, type: 'resize' },
       { x: el.w / 2, y: -el.h / 2, type: 'resize' },
       { x: 0, y: -el.h / 2 - 22, type: 'rotate' },
-    ];
-    handles.forEach((hd) => {
+    ].forEach((hd) => {
       ctx.fillStyle = '#fff';
       ctx.strokeStyle = hc;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 / (s || 1);
       ctx.beginPath();
       ctx.rect(hd.x - hs / 2, hd.y - hs / 2, hs, hs);
       ctx.fill();
@@ -123,106 +124,96 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
     ctx.restore();
   }
 
-  /* ---------- 坐标换算（画布已通过 CSS transform 缩放/平移，需除以 displayScale 再扣回 pan） ---------- */
+  /* ---------- 坐标换算：视口 → 720×960 内部坐标 ---------- */
   function toCanvasXY(e) {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const s = displayScale || 1;
+    const s = viewRef.current.scale * viewRef.current.zoom || 1;
     return {
-      x: (e.clientX - rect.left) / s + pan.x,
-      y: (e.clientY - rect.top) / s + pan.y,
+      x: (e.clientX - rect.left - viewRef.current.panX * s) / s,
+      y: (e.clientY - rect.top - viewRef.current.panY * s) / s,
     };
   }
 
   function findHandle(el, px, py) {
-    // 旋转柄（在元素上方 22px，未旋转命中简单化：整体先转回）
     const rad = -(el.rot || 0);
     const dx = px - el.x;
     const dy = py - el.y;
     const rx = dx * Math.cos(rad) - dy * Math.sin(rad);
     const ry = dx * Math.sin(rad) + dy * Math.cos(rad);
-    const hs = 16;
-    // rotate handle
+    const s = viewRef.current.scale * viewRef.current.zoom || 1;
+    const hs = 16 / s;
     if (Math.abs(rx) <= hs / 2 && Math.abs(ry - (-el.h / 2 - 22)) <= hs / 2) return 'rotate';
-    // resize handle（右上角）
     if (Math.abs(rx - el.w / 2) <= hs && Math.abs(ry - (-el.h / 2)) <= hs) return 'resize';
     if (Math.abs(rx + el.w / 2) <= hs && Math.abs(ry + el.h / 2) <= hs) return 'resize';
     return null;
   }
 
   /* ---------- pointer 交互 ---------- */
-  const dragRef = useRef(null);
   function onPointerDown(e) {
+    e.preventDefault();
     const { x, y } = toCanvasXY(e);
-    const st = stateRef.current;
-    // 先检测选中元素的手柄
-    if (st.selId) {
-      const el = st.tree.elements.find((i) => i.id === st.selId);
+    const st = treeRef.current;
+    // 选中元素的手柄
+    if (selId) {
+      const el = st.elements.find((i) => i.id === selId);
       if (el) {
         const hd = findHandle(el, x, y);
         if (hd) {
-          e.preventDefault();
           setDragMode(hd);
-          dragRef.current = { startX: x, startY: y, el, mode: hd };
+          dragRef.current = { mode: hd, startX: x, startY: y, el };
           return;
         }
       }
     }
-    // 命中检测：z 降序找点中的元素
-    const sorted = st.tree.elements.slice().sort((a, b) => (b.z || 0) - (a.z || 0));
+    // 命中元素 → 移动
+    const sorted = st.elements.slice().sort((a, b) => (b.z || 0) - (a.z || 0));
     const hit = sorted.find((el) => el.type !== 'bg' && hitTest(el, x, y));
     setSelId(hit ? hit.id : null);
     if (hit) {
-      e.preventDefault();
       setDragMode('move');
-      dragRef.current = { startX: x, startY: y, el: hit, mode: 'move' };
+      dragRef.current = { mode: 'move', startX: x, startY: y, el: hit };
     } else {
-      // **没命中元素 → 拖动整个画布（pan）**
-      e.preventDefault();
-      const startClientX = e.clientX;
-      const startClientY = e.clientY;
-      const startPan = { ...pan };
-      dragRef.current = {
-        mode: 'pan', startClientX, startClientY, startPan,
-        // 兼容 onPointerMove 里的 dx/dy 计算
-        startX: x, startY: y, el: null,
-      };
+      // 空白 → 平移画布
       setDragMode('pan');
+      dragRef.current = { mode: 'pan', startClientX: e.clientX, startClientY: e.clientY, startPan: { x: viewRef.current.panX, y: viewRef.current.panY } };
     }
   }
 
   function onPointerMove(e) {
     const dr = dragRef.current;
     if (!dr || !dr.mode) return;
+    e.preventDefault();
     if (dr.mode === 'pan') {
-      // 用 clientX/Y 算 pan 偏移（更稳，不依赖 canvas 当前 scale）
-      const ndcx = (e.clientX - dr.startClientX) / (displayScale || 1);
-      const ndcy = (e.clientY - dr.startClientY) / (displayScale || 1);
-      setPan({ x: dr.startPan.x - ndcx, y: dr.startPan.y - ndcy });
+      const s = viewRef.current.scale * viewRef.current.zoom || 1;
+      setView((v) => ({
+        ...v,
+        panX: dr.startPan.x + (e.clientX - dr.startClientX) / s,
+        panY: dr.startPan.y + (e.clientY - dr.startClientY) / s,
+      }));
       return;
     }
     const { x, y } = toCanvasXY(e);
     const dx = x - dr.startX;
     const dy = y - dr.startY;
-    setTree((t) => ({
-      ...t,
-      elements: t.elements.map((el) => {
+    if (dr.mode === 'move') {
+      setTree((t) => ({ ...t, elements: t.elements.map((el) => (el.id === dr.el.id ? { ...el, x: el.x + dx, y: el.y + dy } : el)) }));
+      dragRef.current = { ...dr, startX: x, startY: y };
+    } else if (dr.mode === 'resize') {
+      setTree((t) => ({ ...t, elements: t.elements.map((el) => {
         if (el.id !== dr.el.id) return el;
-        if (dr.mode === 'move') return { ...el, x: el.x + dx, y: el.y + dy };
-        if (dr.mode === 'resize') {
-          // 缩放：以中心为基准近似（拖右上角）
-          const nw = Math.max(40, el.w + dx * 2);
-          const nh = Math.max(40, el.h + dy * 2);
-          return { ...el, w: nw, h: nh };
-        }
-        if (dr.mode === 'rotate') {
-          const a = Math.atan2(y - el.y, x - el.x);
-          return { ...el, rot: a };
-        }
-        return el;
-      }),
-    }));
-    dragRef.current = { ...dr, startX: x, startY: y };
+        const nw = Math.max(40, el.w + dx * 2);
+        const nh = Math.max(40, el.h + dy * 2);
+        return { ...el, w: nw, h: nh };
+      }) }));
+      dragRef.current = { ...dr, startX: x, startY: y };
+    } else if (dr.mode === 'rotate') {
+      setTree((t) => ({ ...t, elements: t.elements.map((el) => {
+        if (el.id !== dr.el.id) return el;
+        const a = Math.atan2(y - el.y, x - el.x);
+        return { ...el, rot: a };
+      }) }));
+    }
   }
 
   function onPointerUp() {
@@ -253,8 +244,7 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
       ...t,
       elements: [
         ...t.elements,
-        { id, type: 'polaroid', x: W / 2, y: H / 2 + 60, w: 200, h: 240, rot: 0.05, z: 9,
-          data: { birdName, index: 99 } },
+        { id, type: 'polaroid', x: W / 2, y: H / 2 + 60, w: 200, h: 240, rot: 0.05, z: 9, data: { birdName, index: 99 } },
       ],
     }));
     setSelId(id);
@@ -270,15 +260,14 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
   const changeStyle = (styleId) => setTree((t) => ({ ...t, style: styleId }));
 
   const editSelText = () => {
-    const el = tree.elements.find((e) => e.id === selId);
+    const el = treeRef.current.elements.find((e) => e.id === selId);
     if (!el || el.type !== 'text') return;
-    // 用 inline 弹层替代 window.prompt（Android WebView 下 prompt 标题显示 file://，体验差）
     setEditingText({ id: el.id, text: el.data.text || '', fontSize: el.data.fontSize || 22, color: el.data.color || '#22332a' });
   };
 
   const commitEditText = (newText) => {
     if (editingText) {
-      const el = tree.elements.find((e) => e.id === editingText.id);
+      const el = treeRef.current.elements.find((e) => e.id === editingText.id);
       if (el) updateEl(el.id, { data: { ...el.data, text: newText } });
     }
     setEditingText(null);
@@ -287,7 +276,7 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
   const onSaveImage = async () => {
     setSaving(true);
     try {
-      const { dataUrl } = renderTreeToCanvas(stateRef.current.tree);
+      const { dataUrl } = renderTreeToCanvas(treeRef.current);
       const ok = await saveCardImage(dataUrl, `linjianhuixiang_share_edit.png`);
       setToast(ok ? '已保存到相册 ✓' : '保存失败，请检查存储权限');
     } catch (e) {
@@ -300,6 +289,8 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
 
   const style = getStyle(tree.style);
   const selEl = tree.elements.find((e) => e.id === selId);
+  const setZoom = (z) => setView((v) => ({ ...v, zoom: z }));
+  const resetView = () => setView((v) => ({ ...v, zoom: 1, panX: 0, panY: 0 }));
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 98, background: '#16211b', display: 'flex', flexDirection: 'column' }}>
@@ -330,50 +321,32 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
         ))}
       </div>
 
-      {/* 画布区（占满中间剩余空间；画布可 pan + zoom，像手机画板） */}
+      {/* 画布区：canvas 物理尺寸 = 编辑区大小，永远铺满（无滚动、无假画布） */}
       <div
         ref={wrapRef}
-        onPointerDown={(e) => { onPointerDown(e); }}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onDoubleClick={editSelText}
         style={{
-          flex: 1,
-          position: 'relative',
-          background: '#0e1a14',
-          overflow: 'hidden',
-          touchAction: 'none',
-          userSelect: 'none',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          flex: 1, position: 'relative', background: '#0e1a14',
+          overflow: 'hidden', touchAction: 'none', userSelect: 'none',
           minHeight: 0,
         }}
       >
-        {/* 画布：CSS transform 做缩放+平移；canvas 物理 720×960 始终不变 */}
         <canvas
           ref={canvasRef}
-          width={W}
-          height={H}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onPointerLeave={onPointerUp}
+          onDoubleClick={editSelText}
           style={{
-            width: W * displayScale,
-            height: H * displayScale,
-            transform: `translate(${pan.x * displayScale}px, ${pan.y * displayScale}px)`,
-            transformOrigin: '0 0',
-            borderRadius: 8,
-            boxShadow: '0 12px 44px rgba(0,0,0,.5)',
-            cursor: dragMode === 'pan' ? 'grabbing' : dragMode === 'move' ? 'grabbing' : dragMode ? 'grabbing' : 'grab',
-            background: style.bg,
-            touchAction: 'none',
-            userSelect: 'none',
-            flexShrink: 0,
+            display: 'block', width: '100%', height: '100%',
+            cursor: dragMode ? 'grabbing' : 'grab', touchAction: 'none',
           }}
         />
         {/* 选中元素信息条 */}
         {selEl && (
           <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: '#fff', borderRadius: 12, padding: '6px 16px', fontSize: 12, whiteSpace: 'nowrap', pointerEvents: 'none' }}>
-            {selEl.type === 'text' ? '文字（双击编辑）' : selEl.type === 'polaroid' ? `鸟图：${selEl.data.birdName || ''}` : selEl.type} · 拖拽移动 · 角柄缩放 · 上柄旋转
+            {selEl.type === 'text' ? '文字（双击编辑）' : selEl.type === 'polaroid' ? `鸟图：${selEl.data.birdName || ''}` : selEl.type} · 拖元素移动 · 角柄缩放 · 上柄旋转
           </div>
         )}
         {toast && (
@@ -383,7 +356,7 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
         )}
       </div>
 
-      {/* 底部 dock：工具栏 + 缩放控制 */}
+      {/* 底部 dock */}
       <div style={{ background: '#16211b', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '8px 12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={addText} style={{ ...dockBtn, flex: 1 }}>+ 文字</button>
@@ -391,20 +364,20 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
           <button onClick={removeSelected} disabled={!selId} style={{ ...dockBtn, flex: 1, color: selId ? '#ff8a80' : '#555' }}>删除</button>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', color: '#9fb3a7', fontSize: 12 }}>
-          <span style={{ minWidth: 64, fontVariantNumeric: 'tabular-nums' }}>缩放 {Math.round(zoom * 100)}%</span>
+          <span style={{ minWidth: 64, fontVariantNumeric: 'tabular-nums' }}>缩放 {Math.round(view.zoom * 100)}%</span>
           <input
             type="range" min="0.4" max="2" step="0.05"
-            value={zoom} onChange={(e) => setZoom(parseFloat(e.target.value))}
+            value={view.zoom} onChange={(e) => setZoom(parseFloat(e.target.value))}
             style={{ flex: 1, accentColor: '#4db382' }}
           />
           <button onClick={resetView} style={{ ...dockBtn, padding: '6px 12px', flex: 'none' }}>↺ 复位</button>
         </div>
         <div style={{ color: '#7a8d80', fontSize: 11, textAlign: 'center', lineHeight: 1.5 }}>
-          拖空白处平移画布 · 拖元素移动/角柄缩放/上柄旋转 · 双击文字改内容
+          拖空白处平移画布 · 拖元素移动 · 角柄缩放 · 上柄旋转 · 双击文字改内容
         </div>
       </div>
 
-      {/* 选鸟弹层（支持 120 种真实鸟图，按鸟名搜索过滤） */}
+      {/* 选鸟弹层 */}
       {showAddBird && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 99, background: 'rgba(10,20,14,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowAddBird(false)}>
           <div style={{ background: '#fff', borderRadius: 16, maxWidth: 480, width: '100%', maxHeight: '78%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
@@ -437,7 +410,7 @@ export default function CardEditor({ initialTree, onClose, onSave }) {
         </div>
       )}
 
-      {/* inline 文字编辑弹层（替代 WebView 的 window.prompt 体验） */}
+      {/* inline 文字编辑弹层 */}
       {editingText && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(10,20,14,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => commitEditText(editingText.text)}>
           <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 460, padding: 18 }} onClick={(e) => e.stopPropagation()}>
@@ -469,7 +442,6 @@ const topBtn = {
   border: 'none', background: 'rgba(255,255,255,0.12)', color: '#dfe8e1',
   borderRadius: 12, padding: '8px 16px', fontSize: 14, cursor: 'pointer',
 };
-// 底部 dock 按钮
 const dockBtn = {
   padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 600,
   border: '1px solid rgba(255,255,255,0.22)', background: 'rgba(255,255,255,0.08)',

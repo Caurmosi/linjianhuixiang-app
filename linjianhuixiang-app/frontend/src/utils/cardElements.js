@@ -8,7 +8,6 @@
  *  - buildDefaultTree(analysis) 从分析结果生成默认「明信片」布局（兼容旧 drawShareCard 观感）
  */
 
-import { drawBirdBadge } from './birdIcon.js';
 import { getLoaded } from './birdImageLoader.js';
 
 export const CARD_W = 720;
