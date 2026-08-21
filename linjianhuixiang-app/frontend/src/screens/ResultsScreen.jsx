@@ -8,9 +8,11 @@ import AppBar from '../components/AppBar';
 import Ring from '../components/Ring';
 import Chip from '../components/ui/Chip';
 import SharePreview from '../components/SharePreview';
+import CardEditor from '../components/CardEditor';
 import WaveformChart from '../components/charts/WaveformChart';
 import { gradeOf, livabilityDesc } from '../data/repository';
 import { drawShareCard } from '../utils/shareCard';
+import { buildDefaultTree } from '../utils/cardElements';
 import { IconShare, IconDoc, IconChart, IconHeat, IconGlobe } from '../components/icons';
 
 /** 置信度档位 → Chip tone（高=绿 / 中=琥珀 / 低=红），贴合设计 token */
@@ -53,8 +55,9 @@ export default function ResultsScreen() {
   const confLabel = conf != null && a.livability.confidenceLabel ? a.livability.confidenceLabel : null;
 
   const go = (screen) => dispatch({ type: 'GO', screen });
-  // 分享：生成「单次录音」分享卡片 → 全屏预览（预览后可保存到相册）
+  // 分享：生成「单次录音」分享卡片 → 全屏预览（预览后可保存/编辑）
   const [shareCards, setShareCards] = useState(null);
+  const [editingTree, setEditingTree] = useState(null);
   const share = () => {
     const { dataUrl } = drawShareCard(state.analysis);
     setShareCards([{ dataUrl, title: (state.analysis && state.analysis.recording) || '分享卡片' }]);
@@ -136,8 +139,24 @@ export default function ResultsScreen() {
         })}
       </div>
 
-      {/* 分享卡片预览 */}
-      {shareCards && <SharePreview cards={shareCards} onClose={() => setShareCards(null)} />}
+      {/* 分享卡片预览（保存/编辑） */}
+      {shareCards && (
+        <SharePreview
+          cards={shareCards}
+          onClose={() => setShareCards(null)}
+          onEdit={() => {
+            setShareCards(null);
+            setEditingTree(buildDefaultTree(state.analysis));
+          }}
+        />
+      )}
+      {/* 分享卡片编辑器 */}
+      {editingTree && (
+        <CardEditor
+          initialTree={editingTree}
+          onClose={() => setEditingTree(null)}
+        />
+      )}
     </div>
   );
 }

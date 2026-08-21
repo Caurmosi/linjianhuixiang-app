@@ -10,10 +10,12 @@ import { useApp } from '../store/appStore.jsx';
 import AppBar from '../components/AppBar';
 import ConfirmModal from '../components/ConfirmModal';
 import SharePreview from '../components/SharePreview';
+import CardEditor from '../components/CardEditor';
 import { analysisForHistory, buildMockAnalysis, deleteHistory, getHistory } from '../data/repository';
 import { formatISODate } from '../utils/dates';
 import { humanizeBackendError } from '../utils/errorText';
 import { drawShareCard } from '../utils/shareCard';
+import { buildDefaultTree } from '../utils/cardElements';
 import { IconBird, IconClock, IconChevronRight, IconTrash, IconShare, IconStar } from '../components/icons';
 
 export default function HistoryScreen() {
@@ -32,6 +34,7 @@ export default function HistoryScreen() {
   const [selected, setSelected] = useState(() => new Set());
   // 分享卡片预览
   const [cards, setCards] = useState(null);
+  const [editTree, setEditTree] = useState(null); // 分享卡片编辑器元素树
   const [sharing, setSharing] = useState(false);
 
   // 懒加载历史列表：首次进入历史页刷新（mock 同步返回演示数据；api 模式读本地 localStore）
@@ -161,7 +164,8 @@ export default function HistoryScreen() {
       try {
         const analysis = await Promise.resolve(analysisForHistory(item));
         const { dataUrl } = drawShareCard(analysis);
-        out.push({ dataUrl, title: item.name });
+        // 保留 analysis 供「编辑」生成元素树
+        out.push({ dataUrl, title: item.name, analysis });
       } catch (e) {
         /* 单条失败跳过 */
       }
@@ -297,7 +301,20 @@ export default function HistoryScreen() {
       )}
 
       {/* 分享卡片预览 */}
-      {cards && <SharePreview cards={cards} onClose={() => setCards(null)} />}
+      {cards && (
+        <SharePreview
+          cards={cards}
+          onClose={() => setCards(null)}
+          onEdit={(card) => {
+            setCards(null);
+            // card.analysis 存在（批量分享保留）→ 生成元素树编辑；缺失时用默认空树兜底
+            setEditTree(buildDefaultTree(card && card.analysis ? card.analysis : undefined));
+          }}
+        />
+      )}
+
+      {/* 分享卡片编辑器 */}
+      {editTree && <CardEditor initialTree={editTree} onClose={() => setEditTree(null)} />}
 
       {/* 自定义删除弹窗（确认 → 进度 → 摘要） */}
       <ConfirmModal
