@@ -329,6 +329,35 @@ class WebAppInterface(
         }
     }
 
+    /**
+     * 通用文件下载（CSV / JSON / 任意二进制）：
+     * - API 29+：MediaStore.Files（无类型限制，免存储权限）→ 写入 Download/<name>，系统文件管理可见
+     * - API ≤ 28：公共 Downloads/<name>（需 WRITE_EXTERNAL_STORAGE 权限）
+     * - 前端可任意传 mime（"text/csv" / "application/json" / "image/png"）
+     * - 公共地图「导出 CSV」走这条：WebView 默认不响应 Blob URL + a.click()，
+     *   必须桥接 MediaStore/DownloadManager，否则用户看不见下载文件
+     */
+    @JavascriptInterface
+    fun saveFile(dataUrl: String, filename: String, mime: String): Boolean {
+        val bytes = decodeBase64(dataUrl) ?: return false
+        val safeName = sanitize(filename)
+        val safeMime = if (mime.isBlank()) "application/octet-stream" else mime
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                saveToMediaStoreFiles(bytes, safeName, safeMime)
+            } else {
+                if (!ensureWritePermission()) {
+                    Log.i(TAG, "saveFile: WRITE_EXTERNAL_STORAGE 未授权（请求已发起）")
+                    return false
+                }
+                saveToPublicDownloads(bytes, safeName)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "saveFile failed: ${e.message}", e)
+            false
+        }
+    }
+
     // ---------- 内部实现 ----------
 
     private fun writeBase64ToAppFiles(dataUrl: String, filename: String, subDir: String): Boolean {
@@ -397,6 +426,60 @@ class WebAppInterface(
         val file = File(dir, displayName)
         FileOutputStream(file).use { it.write(bytes) }
         Log.i(TAG, "Image saved to ${file.absolutePath}")
+        return true
+    }
+
+    /**
+     * API 29+：MediaStore.Files 写入公共 Download/ 目录（无类型限制）
+     * MediaStore.Files 集合了图片/视频/音频/任意文件，配合 RELATIVE_PATH=Download
+     * 让用户能在系统「文件管理/下载」直接看到。
+     */
+    private fun saveToMediaStoreFiles(bytes: ByteArray, displayName: String, mime: String): Boolean {
+        val resolver = context.contentResolver
+        val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val values = ContentValues().apply {
+            put(MediaStore.Files.FileColumns.DISPLAY_NAME, displayName)
+            put(MediaStore.Files.FileColumns.MIME_TYPE, mime)
+            put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/LinjianHuixiang")
+            put(MediaStore.Files.FileColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(collection, values)
+            ?: run {
+                Log.e(TAG, "MediaStore.Files insert returned null")
+                return false
+            }
+        return try {
+            val os = resolver.openOutputStream(uri)
+            if (os == null) {
+                Log.e(TAG, "MediaStore.Files openOutputStream returned null")
+                resolver.delete(uri, null, null)
+                return false
+            }
+            os.use { it.write(bytes) }
+            values.clear()
+            values.put(MediaStore.Files.FileColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            Log.i(TAG, "File saved to MediaStore.Files: $displayName (${bytes.size} bytes, $mime)")
+            true
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun saveToPublicDownloads(bytes: ByteArray, displayName: String): Boolean {
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "LinjianHuixiang"
+        )
+        if (!dir.exists() && !dir.mkdirs()) {
+            Log.e(TAG, "Failed to create dir: $dir")
+            return false
+        }
+        val file = File(dir, displayName)
+        FileOutputStream(file).use { it.write(bytes) }
+        Log.i(TAG, "File saved to ${file.absolutePath}")
         return true
     }
 

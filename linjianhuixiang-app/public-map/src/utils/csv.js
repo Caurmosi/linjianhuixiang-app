@@ -23,8 +23,22 @@ export function toCsv(rows, columns) {
   return '\uFEFF' + [head, ...lines].join('\r\n') + '\r\n';
 }
 
-/** 触发浏览器下载（Blob + 临时 <a>，自动回收 URL） */
+/** 触发下载（WebView 桥接原生 / 浏览器 Blob + a.click） */
 export function downloadCsv(filename, csvText) {
+  // 1) Android WebView（app 内嵌的公共地图页）：默认不响应 Blob URL + a.click()，
+  //    必须桥接原生 MediaStore/DownloadManager，否则用户看不见下载文件
+  const bridge = typeof window !== 'undefined' ? window.AndroidBridge : null;
+  if (bridge && typeof bridge.saveFile === 'function') {
+    try {
+      // BOM（\uFEFF）已由 toCsv 写入；dataURL 不再二次编码避免损坏 BOM
+      const dataUrl = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvText);
+      const ok = bridge.saveFile(dataUrl, filename, 'text/csv');
+      return !!ok;
+    } catch (e) {
+      console.warn('bridge.saveFile failed, fallback to blob:', e);
+    }
+  }
+  // 2) 浏览器（iPhone Safari / Chrome / Edge）：Blob URL + a.click() 触发下载
   const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -34,4 +48,5 @@ export function downloadCsv(filename, csvText) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
 }

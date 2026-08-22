@@ -405,6 +405,25 @@ body {
 .ljx-input-score {
   width: 74px;
 }
+.ljx-input-date {
+  width: 130px;
+  height: 32px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.ljx-dash {
+  color: #8aa096;
+  font-size: 12px;
+  padding: 0 2px;
+}
+.ljx-btn-export {
+  border-color: #4db382;
+  color: #1b7a4b;
+  background: rgba(77, 179, 130, 0.08);
+}
+.ljx-btn-export:hover:not(:disabled) {
+  background: rgba(77, 179, 130, 0.18);
+}
 .ljx-filter-group {
   display: flex;
   align-items: center;

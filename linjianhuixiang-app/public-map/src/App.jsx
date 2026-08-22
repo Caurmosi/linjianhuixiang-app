@@ -437,7 +437,7 @@ export default function App() {
   const [tileError, setTileError] = useState(null); // 底图瓦片异常轻提示
 
   // 检索 / 筛选（region 模糊 / 物种分布 / 评分区间 / 时间窗）
-  const [filters, setFilters] = useState({ region: '', species: '', minScore: '', maxScore: '', range: 'all' });
+  const [filters, setFilters] = useState({ region: '', species: '', minScore: '', maxScore: '', range: 'all', from: '', to: '' });
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   const [speciesList, setSpeciesList] = useState([]); // 已识别物种（分布筛选项）
@@ -508,8 +508,8 @@ export default function App() {
       species: f.species,
       minScore: f.minScore === '' ? undefined : Number(f.minScore),
       maxScore: f.maxScore === '' ? undefined : Number(f.maxScore),
-      from: f.range === '7d' ? daysAgoIso(7) : f.range === '30d' ? daysAgoIso(30) : undefined,
-      to: undefined,
+      from: f.range === '7d' ? daysAgoIso(7) : f.range === '30d' ? daysAgoIso(30) : (f.from || undefined),
+      to: f.to || undefined,
     };
     try {
       const { clusters: list, total: t } = await fetchClusters(bbox, applied);
@@ -812,7 +812,7 @@ export default function App() {
 
   /** 清除检索/筛选：重置 + 飞回全景 */
   const clearFilters = () => {
-    setFilters({ region: '', species: '', minScore: '', maxScore: '', range: 'all' });
+    setFilters({ region: '', species: '', minScore: '', maxScore: '', range: 'all', from: '', to: '' });
     filtersRef.current = { region: '', species: '', minScore: '', maxScore: '', range: 'all' };
     setCandidates(null);
     const map = mapRef.current;
@@ -921,6 +921,8 @@ export default function App() {
     if (f.maxScore !== '') params.set('maxScore', String(Number(f.maxScore)));
     if (f.range === '7d') params.set('from', daysAgoIso(7));
     else if (f.range === '30d') params.set('from', daysAgoIso(30));
+    else if (f.from) params.set('from', f.from);
+    if (f.to) params.set('to', f.to);
     const res = await fetch(`${API_BASE}/api/public/clusters?${params.toString()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -1297,12 +1299,38 @@ export default function App() {
         <select
           className="ljx-select"
           value={filters.range}
-          onChange={(e) => setFilters((f) => ({ ...f, range: e.target.value }))}
+          onChange={(e) => {
+            const v = e.target.value;
+            // 切预设时清空自定义 from/to（避免冲突）
+            setFilters((f) => ({ ...f, range: v, from: v === 'custom' ? f.from : '', to: v === 'custom' ? f.to : '' }));
+          }}
         >
           <option value="all">全部时间</option>
           <option value="7d">近 7 天</option>
           <option value="30d">近 30 天</option>
+          <option value="custom">自定义...</option>
         </select>
+        {filters.range === 'custom' && (
+          <>
+            <input
+              type="date"
+              className="ljx-input ljx-input-date"
+              value={filters.from}
+              max={filters.to || undefined}
+              onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
+              title="起始日期（含）"
+            />
+            <span className="ljx-dash">—</span>
+            <input
+              type="date"
+              className="ljx-input ljx-input-date"
+              value={filters.to}
+              min={filters.from || undefined}
+              onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
+              title="结束日期（含）"
+            />
+          </>
+        )}
         <select
           className="ljx-select"
           value={filters.species}
@@ -1319,30 +1347,31 @@ export default function App() {
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={clearFilters}>
           清除
         </button>
+        <span className="ljx-filter-sep" />
         <button
           type="button"
-          className="ljx-btn ljx-btn-ghost"
+          className="ljx-btn ljx-btn-ghost ljx-btn-export"
           onClick={onExportCsv}
           disabled={exportBusy}
           title="导出当前筛选结果为 CSV（每地区一行，Excel 可直接打开，MATLAB readtable 可读取）"
         >
-          {exportBusy ? '导出中…' : '⬇️ 聚合 CSV'}
+          {exportBusy ? '导出中…' : '导出聚合'}
         </button>
         <button
           type="button"
-          className="ljx-btn ljx-btn-ghost"
+          className="ljx-btn ljx-btn-ghost ljx-btn-export"
           onClick={onExportDetailCsv}
           disabled={exportBusy}
           title="导出每条采样记录（同一地区多次采样各占一行，可对比不同时间）"
         >
-          {exportBusy ? '导出中…' : '📋 明细 CSV'}
+          {exportBusy ? '导出中…' : '导出明细'}
         </button>
         <span className="ljx-filter-sep" />
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowCompare(true)}>
-          📊 多地区对比
+          多地区对比
         </button>
         <button type="button" className="ljx-btn ljx-btn-ghost" onClick={() => setShowBirds(true)}>
-          📖 鸟种图鉴
+          鸟种图鉴
         </button>
       </div>
 
